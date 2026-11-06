@@ -734,7 +734,8 @@ def _find_caption(w, page: int):
     lines = [f"🌐 CHARACTER INFO\n{_display(w)}\n🌍 GLOBALLY PICKED: {total} times\n",
              f"👥 USERS WHO HAVE THIS WAIFU ({total_users} total):"]
     for index, row in enumerate(rows, page * 10 + 1):
-        name = f"@{row['username']}" if row["username"] else (row["first_name"] or f"User {row['bot_user_id'] or row['user_id']}")
+        public_id = row["bot_user_id"] or storage.ensure_bot_user_id(row["user_id"])
+        name = f"@{row['username']}" if row["username"] else (row["first_name"] or f"User {public_id}")
         lines.append(f"{index}. {name} x{row['copies']}")
     return "\n".join(lines), max(1, (total_users + 9) // 10)
 
