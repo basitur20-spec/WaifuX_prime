@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import secrets
 import time
 import uuid
 from contextlib import contextmanager
@@ -536,3 +537,24 @@ def migrate_legacy_data() -> None:
             "INSERT INTO schema_migrations(migration_name,completed_at) VALUES ('legacy_collection_import',?)",
             (now(),)
         )
+
+
+
+def ensure_bot_user_id(user_id: int) -> str:
+    """Assign a stable, unique 11-digit public ID to a Telegram user."""
+    init_db()
+    with connect() as con:
+        con.execute("INSERT OR IGNORE INTO user_profiles(user_id,updated_at) VALUES (?,?)", (int(user_id), now()))
+        row = con.execute("SELECT bot_user_id FROM user_profiles WHERE user_id=?", (int(user_id),)).fetchone()
+        if row and row["bot_user_id"]:
+            return str(row["bot_user_id"])
+        for _ in range(20):
+            bot_id = str(10_000_000_000 + secrets.randbelow(90_000_000_000))
+            try:
+                con.execute("UPDATE user_profiles SET bot_user_id=? WHERE user_id=? AND bot_user_id IS NULL", (bot_id, int(user_id)))
+            except sqlite3.IntegrityError:
+                continue
+            row = con.execute("SELECT bot_user_id FROM user_profiles WHERE user_id=?", (int(user_id),)).fetchone()
+            if row and row["bot_user_id"]:
+                return str(row["bot_user_id"])
+        raise RuntimeError("Could not allocate a unique bot user ID.")
