@@ -5,6 +5,10 @@ The module deliberately keeps all ownership/economy writes in storage.py.
 from __future__ import annotations
 
 import asyncio
+import difflib
+import os
+import difflib
+import os
 import random
 import re
 import time
@@ -148,6 +152,32 @@ def _parse_upload_details(raw: str) -> dict:
     return data
 
 
+def _quality_based_price(photo, rarity: str) -> int:
+    low, high = RARITIES[rarity][1]
+    pixels = max(0, int(getattr(photo, "width", 0) or 0) * int(getattr(photo, "height", 0) or 0))
+    size = max(0, int(getattr(photo, "file_size", 0) or 0))
+    resolution_score = min(1.0, max(0.0, (pixels - 512 * 512) / (2560 * 1440 - 512 * 512)))
+    size_score = min(1.0, size / 2_000_000)
+    quality_score = 0.8 * resolution_score + 0.2 * size_score
+    return low + int((high - low) * quality_score)
+
+
+def _correct_catalogue_labels(name: str, anime: str):
+    catalogue = storage.list_waifus(limit=10000)
+    known_names = list(dict.fromkeys(w["name"] for w in catalogue))
+    known_anime = list(dict.fromkeys(w["anime"] for w in catalogue))
+    corrected = []
+    name_match = difflib.get_close_matches(name, known_names, n=1, cutoff=0.90)
+    anime_match = difflib.get_close_matches(anime, known_anime, n=1, cutoff=0.90)
+    if name_match and name_match[0].casefold() != name.casefold():
+        corrected.append(f"Name: {name} -> {name_match[0]}")
+        name = name_match[0]
+    if anime_match and anime_match[0].casefold() != anime.casefold():
+        corrected.append(f"Anime: {anime} -> {anime_match[0]}")
+        anime = anime_match[0]
+    return name, anime, corrected
+
+
 async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     uid = update.effective_user.id
@@ -163,7 +193,7 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not photo:
         await msg.reply_text(
             "Image ke sath caption mein details likho ya image ko reply karke /upload use karo.\n\n"
-            "Name: Character Name\nRarity: Shiny\nAnime: Anime Name\nPrice: 40000\nID: 1234"
+            "Name: Character Name\nRarity: Shiny (or 1-19)\nAnime: Anime Name\nPrice: optional\nID: optional\nAliases: optional comma-separated names"
         )
         return
     data = _parse_upload_details(details_text)
@@ -173,8 +203,9 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await msg.reply_text("Upload details incomplete/invalid hain. Name, Rarity aur Anime zaroor do.")
         return
     low, high = RARITIES[rarity][1]
+    name, anime, corrections = _correct_catalogue_labels(name.strip(), anime.strip())
     try:
-        price = int(re.sub(r"[^0-9]", "", data.get("price", ""))) if data.get("price") else random.randint(low, high)
+        price = int(re.sub(r"[^0-9]", "", data.get("price", ""))) if data.get("price") else _quality_based_price(photo, rarity)
         if not low <= price <= high:
             raise ValueError(f"{rarity} ki allowed price {_fmt(low)}–{_fmt(high)} hai.")
         wid = data.get("id") or ""
@@ -191,7 +222,7 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         if reward:
             storage.change_balance(uid, cash_delta=reward)
         storage.add_audit(uid, "waifu_upload", details={"waifu_id": wid, "rarity": rarity})
-    except (ValueError, Exception) as exc:
+    except Exception as exc:
         await msg.reply_text(f"❌ Upload reject ho gaya: {exc}")
         return
     w = storage.get_waifu(wid)
