@@ -105,6 +105,12 @@ def init_db() -> None:
             spawn_enabled INTEGER NOT NULL DEFAULT 1,
             sell_percent REAL NOT NULL DEFAULT 50
         );
+        CREATE TABLE IF NOT EXISTS market_refreshes (
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            refreshes INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(user_id, day_key)
+        );
         CREATE TABLE IF NOT EXISTS marketplace_slots (
             user_id INTEGER NOT NULL,
             slot INTEGER NOT NULL,
