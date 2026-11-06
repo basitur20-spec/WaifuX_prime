@@ -1087,7 +1087,7 @@ def add_balance(uid, amount):
 
 # ---------------- COLLECTION (HOOK) ----------------
 
-def add_waifu_to_collection(uid, waifu_id):
+def add_waifu_id_to_user_collection(uid, waifu_id):
     users = load_json(USERS_FILE, {})
     u = users.setdefault(str(uid), {"balance": 0, "collection": []})
     u["collection"].append(waifu_id)
@@ -1303,7 +1303,7 @@ async def dredeem_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     c["qty"] -= 1
     c["used"].append(str(uid))
-    add_waifu_to_collection(uid, c["waifu_id"])
+    add_waifu_id_to_user_collection(uid, c["waifu_id"])
     save_json(DGEN_FILE, data)
 
     await update.message.reply_text(
@@ -2527,6 +2527,19 @@ def fetch_collection(uid):
 
     data = cur.fetchall()
     con.close()
+
+    # Codes created before a character catalogue is connected store only IDs
+    # in users.json. Include those IDs in the viewer without inventing metadata.
+    try:
+        users = load_json(USERS_FILE, {})
+        user_data = users.get(str(uid), {})
+        known_ids = {str(row[0]) for row in data}
+        for waifu_id in user_data.get("collection", []):
+            wid = str(waifu_id)
+            if wid not in known_ids:
+                data.append((wid, f"Waifu {wid}", "Catalogue pending", "Unknown", "", 0))
+    except (AttributeError, TypeError, ValueError):
+        pass
 
     return data
 
