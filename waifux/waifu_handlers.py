@@ -98,7 +98,7 @@ def _display(w) -> str:
 def _random_waifu(rarities: list[str] | None = None):
     available = []
     for rarity in (rarities or RARITY_ORDER):
-        setting = storage.connect()
+        setting = storage.raw_connect()
         try:
             row = setting.execute(
                 "SELECT spawn_enabled FROM rarity_settings WHERE rarity=?", (rarity,)
@@ -381,7 +381,7 @@ async def hunt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if msg.chat.type == ChatType.PRIVATE:
         await msg.reply_text("Hunt sirf groups mein active hota hai.")
         return
-    con = storage.connect()
+    con = storage.raw_connect()
     try:
         spawn = con.execute("SELECT * FROM active_spawns WHERE chat_id=?", (msg.chat_id,)).fetchone()
         if not spawn or spawn["expires_at"] <= storage.now():
