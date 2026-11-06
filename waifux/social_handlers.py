@@ -215,6 +215,11 @@ async def give_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     with storage.connect() as con:
         con.execute("BEGIN IMMEDIATE")
+        exists = con.execute("SELECT 1 FROM user_waifus WHERE user_id=? AND waifu_id=? LIMIT 1", (data["target_id"], data["waifu_id"])).fetchone()
+        if exists:
+            con.rollback()
+            await q.answer("Receiver already owns this waifu.", show_alert=True)
+            return
         con.execute(
             "INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)",
             (data["target_id"], data["waifu_id"], storage.now(), "admin_gift")
