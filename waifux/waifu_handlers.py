@@ -1269,17 +1269,48 @@ async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if action == "delno":
         storage.finish_pending(token, "cancelled")
         await q.answer("Cancelled.")
-        await q.edit_message_caption("Deletion cancelled.")
+        await q.edit_message_caption("❎ DELETE CANCELLED\nNo changes were made. Waifu is safe.")
         return
+    affected = []
     with storage.connect() as con:
         con.execute("BEGIN IMMEDIATE")
+        waifu = con.execute("SELECT * FROM waifus WHERE waifu_id=? AND deleted_at IS NULL", (wid,)).fetchone()
+        if not waifu:
+            con.rollback()
+            await q.answer("Waifu not found or already deleted.", show_alert=True)
+            return
+        affected = [row["user_id"] for row in con.execute(
+            "SELECT DISTINCT user_id FROM user_waifus WHERE waifu_id=?", (wid,)
+        ).fetchall()]
         con.execute("DELETE FROM user_waifus WHERE waifu_id=?", (wid,))
+        con.execute("DELETE FROM active_spawns WHERE waifu_id=?", (wid,))
+        con.execute("DELETE FROM marketplace_slots WHERE waifu_id=?", (wid,))
+        con.execute("UPDATE auctions SET status='cancelled' WHERE waifu_id=? AND status='active'", (wid,))
         con.execute("UPDATE waifus SET deleted_at=? WHERE waifu_id=?", (storage.now(), wid))
         con.execute("UPDATE pending_actions SET status='done' WHERE token=?", (token,))
-        con.execute("INSERT INTO audit_log(actor_id,action,details,created_at) VALUES (?,?,?,?)", (q.from_user.id, "waifu_deleted", json.dumps({"waifu_id":wid}), storage.now()))
+        con.execute("INSERT INTO audit_log(actor_id,action,details,created_at) VALUES (?,?,?,?)",
+                    (q.from_user.id, "waifu_deleted", json.dumps({"waifu_id":wid,"affected_users":affected}), storage.now()))
         con.commit()
     await q.answer("Deleted.")
-    await q.edit_message_caption("✅ Waifu permanently deleted from the catalogue and all collections.")
+    await q.edit_message_caption(
+        f"✅ WAIFU DELETED SUCCESSFULLY\n\n{waifu['name']}\n🆔 {wid}\n"
+        "Removed from catalogue and all user collections. Action logged."
+    )
+    info = _display(waifu)
+    for user_id in affected:
+        try:
+            if waifu["image_file_id"]:
+                await context.bot.send_photo(user_id, waifu["image_file_id"], caption=f"🌐 CHARACTER INFO\n{info}")
+            else:
+                await context.bot.send_message(user_id, f"🌐 CHARACTER INFO\n{info}")
+            await context.bot.send_message(
+                user_id,
+                "💔 WAIFU REMOVED 💔\n\nThis waifu has been permanently deleted by the system administrators.\n"
+                "• Removed from your collection\n• You did NOT lose cash\n• This action cannot be reversed\n\nThank you for understanding 🌸"
+            )
+        except Exception:
+            # A user may have blocked the bot; database deletion remains complete.
+            pass
 
 
 async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
