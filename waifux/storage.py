@@ -80,6 +80,8 @@ def init_db() -> None:
             first_name TEXT,
             profile_photo TEXT,
             profile_waifu_id TEXT,
+            display_mode TEXT NOT NULL DEFAULT 'default',
+            display_value TEXT,
             updated_at INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS cooldowns (
@@ -198,6 +200,11 @@ def init_db() -> None:
             con.execute("ALTER TABLE user_balance ADD COLUMN cash INTEGER NOT NULL DEFAULT 0")
         if "diamonds" not in columns:
             con.execute("ALTER TABLE user_balance ADD COLUMN diamonds INTEGER NOT NULL DEFAULT 0")
+        profile_columns = {row["name"] for row in con.execute("PRAGMA table_info(user_profiles)")}
+        if "display_mode" not in profile_columns:
+            con.execute("ALTER TABLE user_profiles ADD COLUMN display_mode TEXT NOT NULL DEFAULT 'default'")
+        if "display_value" not in profile_columns:
+            con.execute("ALTER TABLE user_profiles ADD COLUMN display_value TEXT")
 
 
 def now() -> int:
@@ -318,8 +325,12 @@ def collection(user_id: int, rarity: str | None = None, anime: str | None = None
     args: list[object] = [int(user_id)]
     for field, value in (("w.rarity", rarity), ("w.anime", anime), ("w.name", name)):
         if value:
-            sql += f" AND {field}=?"
-            args.append(value)
+            if field == "w.name":
+                sql += " AND w.name LIKE ?"
+                args.append(f"%{value}%")
+            else:
+                sql += f" AND {field}=?"
+                args.append(value)
     sql += " ORDER BY uw.is_favorite DESC, w.anime COLLATE NOCASE, w.name COLLATE NOCASE"
     with connect() as con:
         return con.execute(sql, args).fetchall()
