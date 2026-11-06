@@ -16,6 +16,8 @@ from telegram.ext import (
 from legacy import partial_commands as legacy
 from . import waifu_handlers as waifu
 from . import marketplace
+from . import social_handlers as social
+from . import event_handlers as events
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +139,17 @@ def register_handlers(app: Application, owner_id: int) -> None:
         "marketplace": marketplace.marketplace_cmd,
         "auction": marketplace.auction_cmd,
         "bid": marketplace.bid_cmd,
+        "trade": social.trade_cmd,
+        "give": social.give_cmd,
+        "gclaim": events.gclaim_cmd,
+        "claim": events.claim_cmd,
+        "filters": events.filters_cmd,
+        "filter": events.filter_add_cmd,
+        "delfilter": events.filter_delete_cmd,
+        "delall": events.filter_delete_all_cmd,
+        "send": events.send_all_cmd,
     }
+    app.add_handler(MessageHandler(filters.ALL, events.track_user), group=-2)
     app.add_handler(MessageHandler(filters.COMMAND, waifu.command_guard), group=-1)
     for name, callback in command_map.items():
         app.add_handler(CommandHandler(name, callback))
@@ -165,8 +177,11 @@ def register_handlers(app: Application, owner_id: int) -> None:
     app.add_handler(CallbackQueryHandler(waifu.delete_callback, pattern=r"^del(?:ok|no):"))
     app.add_handler(CallbackQueryHandler(marketplace.marketplace_callback, pattern=r"^mkt:"))
     app.add_handler(CallbackQueryHandler(marketplace.auction_callback, pattern=r"^aucbid:"))
+    app.add_handler(CallbackQueryHandler(social.trade_callback, pattern=r"^trd(?:accept|cancel):"))
+    app.add_handler(CallbackQueryHandler(social.give_callback, pattern=r"^giv(?:eok|no):"))
     app.add_handler(InlineQueryHandler(waifu.inline_collection))
     app.add_handler(MessageHandler(filters.ALL, waifu.group_activity), group=1)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, events.filter_message), group=2)
     app.job_queue.run_repeating(marketplace.settle_auctions, interval=60, first=30, name="auction-settlement")
     app.job_queue.run_repeating(waifu.spawn_expiry_job, interval=15, first=15, name="spawn-expiry")
     logger.info("Registered %d commands and %d callback routes", len(command_map), len(callback_map))
