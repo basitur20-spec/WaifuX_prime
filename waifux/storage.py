@@ -71,7 +71,7 @@ def init_db() -> None:
             waifu_id TEXT NOT NULL REFERENCES waifus(waifu_id),
             obtained_at INTEGER NOT NULL,
             source TEXT NOT NULL DEFAULT 'unknown',
-            is_favorite INTEGER NOT NULL DEFAULT 0,
+            is_favorite INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_user_waifus_user ON user_waifus(user_id);
         CREATE TABLE IF NOT EXISTS user_profiles (
