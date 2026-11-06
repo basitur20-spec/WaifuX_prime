@@ -30,7 +30,7 @@ def _available(rarity: str):
             """SELECT w.* FROM waifus w
             WHERE w.rarity=? AND w.deleted_at IS NULL
             AND NOT EXISTS (SELECT 1 FROM auctions a WHERE a.waifu_id=w.waifu_id)
-            ORDER BY RANDOM() LIMIT 100""", (rarity,)
+            ORDER BY RANDOM() LIMIT 10000""", (rarity,)
         ).fetchall()
 
 
