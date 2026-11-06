@@ -435,7 +435,7 @@ async def inline_collection(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     from telegram import InlineQueryResultCachedPhoto
     query = update.inline_query
     term = query.query.strip()
-    rows = _collection_for_user(query.from_user.id)
+    rows = [w for w in _collection_for_user(query.from_user.id) if w['image_file_id']]
     if term:
         bits = term.split(maxsplit=1)
         term = bits[1] if len(bits) == 2 and bits[0].lower() == "waifu" else term
