@@ -152,6 +152,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
         "stop": waifu.stop_cmd,
         "run": waifu.run_cmd,
         "marketplace": marketplace.marketplace_cmd,
+        "marketspawn": marketplace.marketspawn_cmd,
         "auction": marketplace.auction_cmd,
         "bid": marketplace.bid_cmd,
         "trade": social.trade_cmd,
