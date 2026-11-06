@@ -645,11 +645,18 @@ async def propose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     storage.change_balance(uid, cash_delta=-30_000)
     storage.set_cooldown(uid, "propose", 300)
-    intro = await update.effective_message.reply_photo(
-        "https://t.me/movieandweb_s_group/17959",
-        caption=f"{update.effective_user.first_name} 💫 The moment you've been waiting for 💫"
-    )
-    processing = await intro.reply_text("ᴘʀᴏᴘᴏꜱɪɴɢ ʜᴇʀ.... 💍")
+    try:
+        await context.bot.copy_message(
+            chat_id=update.effective_chat.id,
+            from_chat_id="@movieandweb_s_group",
+            message_id=17959,
+            caption=f"{update.effective_user.first_name} 💫 The moment you've been waiting for 💫"
+        )
+    except Exception:
+        await update.effective_message.reply_text(
+            f"{update.effective_user.first_name} 💫 The moment you've been waiting for 💫"
+        )
+    processing = await update.effective_message.reply_text("ᴘʀᴏᴘᴏꜱɪɴɢ ʜᴇʀ.... 💍")
     await asyncio.sleep(random.randint(3, 5))
     if random.uniform(0, 100) <= random.randint(35, 45):
         w = _random_waifu(["ChristmasArc", "RoyalArc", "NeonArc", "CelestialArc"])
@@ -658,10 +665,18 @@ async def propose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await processing.reply_photo(w["image_file_id"], caption=f"💖 {w['name']} has accepted your proposal!\n{_display(w)}")
             return
     rejection = random.choice([
-        ("https://t.me/movieandweb_s_group/18022", "You've been friend-zoned so hard, you're now the mayor of friend zone city! 🏙️"),
-        ("https://t.me/movieandweb_s_group/17925", "Breaking news: local simp gets rejected so hard! 🥲🛏️")
+        (18022, "You've been friend-zoned so hard, you're now the mayor of friend zone city! 🏙️"),
+        (17925, "Breaking news: local simp gets rejected so hard! 🥲🛏️")
     ])
-    await processing.reply_photo(rejection[0], caption=rejection[1])
+    try:
+        await context.bot.copy_message(
+            chat_id=update.effective_chat.id,
+            from_chat_id="@movieandweb_s_group",
+            message_id=rejection[0],
+            caption=rejection[1]
+        )
+    except Exception:
+        await processing.reply_text(rejection[1])
 
 
 async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
