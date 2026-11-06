@@ -9,9 +9,12 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     InlineQueryHandler,
+    MessageHandler,
+    filters,
 )
 
 from legacy import partial_commands as legacy
+from . import waifu_handlers as waifu
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +81,7 @@ async def redeem_command(update, context) -> None:
 def register_handlers(app: Application, owner_id: int) -> None:
     """Register each command once and route callbacks by specific prefixes."""
     _install_runtime_roles(owner_id)
+    waifu.configure(owner_id)
     legacy.ensure_files()
     legacy.init_collection_db()
 
@@ -111,6 +115,25 @@ def register_handlers(app: Application, owner_id: int) -> None:
         "ruploader": legacy.remove_uploader,
         "uploaderlist": legacy.uploader_list_command,
         "uploadercommands": legacy.uploader_commands,
+        "upload": waifu.upload_cmd,
+        "collection": waifu.collection_cmd,
+        "fav": waifu.fav_cmd,
+        "waifu": waifu.waifu_cmd,
+        "hunt": waifu.hunt_cmd,
+        "spawn": waifu.spawn_cmd,
+        "changetime": waifu.changetime_cmd,
+        "marriage": waifu.marriage_cmd,
+        "propose": waifu.propose_cmd,
+        "profile": waifu.profile_cmd,
+        "find": waifu.find_cmd,
+        "dfind": waifu.dfind_cmd,
+        "f": waifu.f_cmd,
+        "gift": waifu.gift_cmd,
+        "sell": waifu.sell_cmd,
+        "setprofile": waifu.setprofile_cmd,
+        "dupload": waifu.dupload_cmd,
+        "stop": waifu.stop_cmd,
+        "run": waifu.run_cmd,
     }
     for name, callback in command_map.items():
         app.add_handler(CommandHandler(name, callback))
@@ -131,5 +154,11 @@ def register_handlers(app: Application, owner_id: int) -> None:
     for pattern, callback in callback_map:
         app.add_handler(CallbackQueryHandler(callback, pattern=pattern))
 
-    app.add_handler(InlineQueryHandler(legacy.inline_collection))
+    app.add_handler(CallbackQueryHandler(waifu.collection_callback, pattern=r"^(?:col|colimg|colclose):"))
+    app.add_handler(CallbackQueryHandler(waifu.waifu_callback, pattern=r"^fav(?:inline|confirm|cancel):"))
+    app.add_handler(CallbackQueryHandler(waifu.gift_callback, pattern=r"^gift(?:ok|no):"))
+    app.add_handler(CallbackQueryHandler(waifu.sell_callback, pattern=r"^sell(?:ok|no):"))
+    app.add_handler(CallbackQueryHandler(waifu.delete_callback, pattern=r"^del(?:ok|no):"))
+    app.add_handler(InlineQueryHandler(waifu.inline_collection))
+    app.add_handler(MessageHandler(filters.ALL, waifu.group_activity), group=1)
     logger.info("Registered %d commands and %d callback routes", len(command_map), len(callback_map))
