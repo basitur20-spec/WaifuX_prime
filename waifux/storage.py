@@ -113,6 +113,12 @@ def init_db() -> None:
             refreshes INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY(user_id, day_key)
         );
+        CREATE TABLE IF NOT EXISTS market_daily_purchases (
+            user_id INTEGER NOT NULL,
+            day_key TEXT NOT NULL,
+            purchases INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(user_id, day_key)
+        );
         CREATE TABLE IF NOT EXISTS marketplace_slots (
             user_id INTEGER NOT NULL,
             slot INTEGER NOT NULL,
