@@ -41,7 +41,7 @@ async def trade_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"🔁 TRADE REQUEST\n\nYou offer: {own['name']} ({own['waifu_id']})\n"
         f"You receive: {theirs['name']} ({theirs['waifu_id']})\n"
         f"Trade partner: {target.full_name}\n\n"
-        "Trade tabhi complete hogi jab doosra user accept kare.",
+        "The trade will be completed only after the other user accepts.",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ Accept Trade", callback_data=f"trdaccept:{token}"),
             InlineKeyboardButton("❌ Cancel", callback_data=f"trdcancel:{token}")
