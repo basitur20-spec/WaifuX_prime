@@ -149,14 +149,14 @@ async def help_commands_page1(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
 
     text = (
-        "/hunt\n→ Hunt a waifu by name\n\n"
-        "/fav\n→ Add waifu to your favorites\n\n"
-        "/waifu\n→ Claim daily waifu\n\n"
-        "/marriage\n→ To Marry a waifu\n\n"
-        "/propose\n→ Propose to waifu\n\n"
-        "/bonus\n→ To Claim your daily/weekly bonus\n\n"
-        "/explore\n→ To Explore Treasure\n\n"
-        "/pay\n→ To Pay other user coins"
+        "/balance\n→ Check your cash and diamonds\n\n"
+        "/explore\n→ Explore and earn rewards\n\n"
+        "/bonus\n→ Claim daily or weekly bonus\n\n"
+        "/pay\n→ Transfer coins to another user\n\n"
+        "/roll\n→ Play odd/even dice\n\n"
+        "/darts\n→ Play the darts betting game\n\n"
+        "/goal\n→ Play the goal betting game\n\n"
+        "/mines\n→ Play the mines game"
     )
 
     keyboard = [
@@ -173,14 +173,14 @@ async def help_commands_page2(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
 
     text = (
-        "/marketplace\n→ Buy new characters/waifus\n\n"
-        "/gift\n→ Gift waifu from i'd\n\n"
-        "/collection\n→ View your all collection\n\n"
-        "/dmode\n→ Arrange collection mode by rarity\n\n"
-        "/dfind\n→ Find waifu by name\n\n"
-        "/f\n→ Find waifu by ID\n\n"
-        "/find\n→ Full waifu details/id's\n\n"
-        "/balance\n→ Check your balance"
+        "/collection\n→ View your collected waifu IDs\n\n"
+        "/dtops\n→ View the leaderboard\n\n"
+        "/gen\n→ Generate cash or diamond codes (staff)\n\n"
+        "/redeem\n→ Redeem a cash or diamond code\n\n"
+        "/dgen\n→ Generate waifu codes (staff)\n\n"
+        "/dredeem\n→ Redeem a waifu code\n\n"
+        "/redeemtoggle on/off\n→ Control staff cash-code redemption\n\n"
+        "/dredeemtoggle on/off\n→ Control staff waifu-code redemption"
     )
 
     keyboard = [[InlineKeyboardButton("𝑩𝒂𝒄𝒌 ⬅", callback_data="HELP_COMMANDS_1")]]
