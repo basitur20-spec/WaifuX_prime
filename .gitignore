@@ -15,3 +15,6 @@ data/*.db
 data/*.sqlite
 data/*.sqlite3
 data/*.json
+
+sudo_users.json
+uploader_users.json
