@@ -192,7 +192,7 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         details_text = msg.text or msg.caption or ""
     if not photo:
         await msg.reply_text(
-            "Image ke sath caption mein details likho ya image ko reply karke /upload use karo.\n\n"
+            "Add the details in the photo caption, or reply to the photo with /upload.\n\n"
             "Name: Character Name\nRarity: Shiny (or 1-19)\nAnime: Anime Name\nPrice: optional\nID: optional\nAliases: optional comma-separated names"
         )
         return
@@ -200,7 +200,7 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     name, anime = data.get("name"), data.get("anime")
     rarity = _rarity_name(data.get("rarity", ""))
     if not name or not anime or not rarity:
-        await msg.reply_text("Upload details incomplete/invalid hain. Name, Rarity aur Anime zaroor do.")
+        await msg.reply_text("Upload details are incomplete or invalid. Name, Rarity, and Anime are required.")
         return
     low, high = RARITIES[rarity][1]
     name, anime, corrections = _correct_catalogue_labels(name.strip(), anime.strip())
@@ -213,17 +213,17 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             used = {str(w["waifu_id"]) for w in storage.list_waifus(limit=10000)}
             free = [str(n).zfill(4) for n in range(1000, 10000) if str(n).zfill(4) not in used]
             if not free:
-                raise ValueError("Waifu ID space khatam ho gaya.")
+                raise ValueError("No free Waifu IDs are available.")
             wid = random.choice(free)
         if len(wid) != 4 or not wid.isdigit():
-            raise ValueError("ID exactly 4 digits ka hona chahiye.")
+            raise ValueError("The ID must contain exactly 4 digits.")
         storage.add_waifu(wid, name, anime, rarity, price, photo.file_id, uid, [a.strip() for a in data.get('aliases', '').split(',') if a.strip()])
         reward = int(price * 0.03)
         if reward:
             storage.change_balance(uid, cash_delta=reward)
         storage.add_audit(uid, "waifu_upload", details={"waifu_id": wid, "rarity": rarity})
     except Exception as exc:
-        await msg.reply_text(f"❌ Upload reject ho gaya: {exc}")
+        await msg.reply_text(f"❌ Upload rejected: {exc}")
         return
     w = storage.get_waifu(wid)
     await msg.reply_photo(
@@ -409,7 +409,7 @@ def _collection_keyboard(uid, page, count):
 async def _send_fav_confirmation(message, uid: int, wid: str):
     w = storage.owned_waifu(uid, wid)
     if not w:
-        await message.reply_text("😔 Ye waifu tumhari collection mein nahi hai.")
+        await message.reply_text("😔 This waifu is not in your collection.")
         return
     token = storage.create_pending(uid, "favorite", {"waifu_id": w["waifu_id"]}, 60)
     keyboard = InlineKeyboardMarkup([[
@@ -552,7 +552,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     w = _random_waifu(["Starter", "Rising", "Shiny", "Ultimate", "RoyalArc"])
     if not w:
-        await update.effective_message.reply_text("Abhi reward pool mein waifus available nahi hain.")
+        await update.effective_message.reply_text("No waifus are currently available in the reward pool.")
         return
     with storage.connect() as con:
         con.execute("BEGIN IMMEDIATE")
@@ -575,7 +575,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def hunt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     if msg.chat.type == ChatType.PRIVATE:
-        await msg.reply_text("Hunt sirf groups mein active hota hai.")
+        await msg.reply_text("Hunt is available in groups only.")
         return
     supplied = " ".join(context.args).casefold().strip()
     if not supplied:
@@ -683,7 +683,7 @@ async def spawn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     rarity, status = _rarity_name(context.args[0]), context.args[1].lower()
     if not rarity or status not in {"on", "off"}:
-        await update.effective_message.reply_text("Rarity ya on/off value sahi nahi.")
+        await update.effective_message.reply_text("Invalid rarity or on/off value.")
         return
     with storage.connect() as con:
         con.execute(
@@ -698,7 +698,7 @@ async def changetime_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not _sudo(update.effective_user.id):
         return
     if update.effective_message.chat.type == ChatType.PRIVATE:
-        await update.effective_message.reply_text("Ye command group mein use karo: /changetime <2-120 minutes>")
+        await update.effective_message.reply_text("Use this command in a group: /changetime <2-120 minutes>")
         return
     try:
         minutes = int(context.args[0])
@@ -734,7 +734,7 @@ async def marriage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     w = _random_waifu(["Shiny", "Ultimate"])
     if not w:
-        await update.effective_message.reply_text("Marriage reward pool mein abhi waifu nahi.")
+        await update.effective_message.reply_text("No waifus are currently available for marriage rewards.")
         return
     storage.add_to_collection(uid, w["waifu_id"], "marriage")
     await update.effective_message.reply_photo(w["image_file_id"], caption=f"💍 Congratulations! You are now married!\n{_display(w)}")
@@ -805,7 +805,7 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             else:
                 found = con.execute("SELECT * FROM user_profiles WHERE lower(username)=lower(?)", (search,)).fetchone()
         if not found:
-            await update.effective_message.reply_text("⚠️ User not found. User ko pehle bot start karna hoga.")
+            await update.effective_message.reply_text("⚠️ User not found. They must start the bot first.")
             return
         target_id = int(found["user_id"])
     bot_user_id = storage.ensure_bot_user_id(target_id)
