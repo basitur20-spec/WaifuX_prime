@@ -12,9 +12,6 @@ import random
 import re
 import time
 import urllib.request
-import random
-import re
-import time
 from collections import defaultdict, deque
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -210,7 +207,7 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     try:
         price = int(re.sub(r"[^0-9]", "", data.get("price", ""))) if data.get("price") else _quality_based_price(photo, rarity)
         if not low <= price <= high:
-            raise ValueError(f"{rarity} ki allowed price {_fmt(low)}–{_fmt(high)} hai.")
+            raise ValueError(f"{rarity} has an allowed price range of {_fmt(low)}–{_fmt(high)}.")
         wid = data.get("id") or ""
         if not wid:
             used = {str(w["waifu_id"]) for w in storage.list_waifus(limit=10000)}
@@ -1234,24 +1231,24 @@ async def f_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def gift_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     if not msg.reply_to_message or not msg.reply_to_message.from_user:
-        await msg.reply_text("Jis user ko gift karna hai uske message par reply karke /gift <waifu_id> likho.")
+        await msg.reply_text("Reply to the recipient's message and use /gift <waifu_id>.")
         return
     if not context.args:
         await msg.reply_text("Usage: /gift <waifu_id>")
         return
     giver, receiver = update.effective_user.id, msg.reply_to_message.from_user
     if receiver.is_bot or receiver.id == giver:
-        await msg.reply_text("Bot ya khud ko gift nahi kar sakte.")
+        await msg.reply_text("You cannot gift a character to the bot or to yourself.")
         return
     w = storage.owned_waifu(giver, context.args[0])
     if not w:
-        await msg.reply_text("Ye waifu tumhari collection mein nahi hai.")
+        await msg.reply_text("This character is not in your collection.")
         return
     if storage.owned_waifu(receiver.id, context.args[0]):
         await msg.reply_text("⚠️ Receiver already owns this waifu. Duplicate gifting is not allowed.")
         return
     token = storage.create_pending(giver, "gift", {"receiver_id": receiver.id, "waifu_id": w["waifu_id"], "receiver_name": receiver.full_name}, 60)
-    caption = f"🎁 GIFT CONFIRMATION\n\n{_display(w)}\n\nReceiver: {receiver.full_name}\nRequest 1 minute mein expire ho jayegi.\nGift confirm karna hai?"
+    caption = f"🎁 GIFT CONFIRMATION\n\n{_display(w)}\n\nReceiver: {receiver.full_name}\nThis request will expire in 1 minute.\nGift confirm karna hai?"
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Confirm", callback_data=f"giftok:{token}"),
         InlineKeyboardButton("❌ Cancel", callback_data=f"giftno:{token}")
@@ -1267,7 +1264,7 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     action, token = q.data.split(":")
     pending = storage.get_pending(token, q.from_user.id, "gift")
     if not pending:
-        await q.answer("Gift request expire ho gayi ya tumhari nahi hai.", show_alert=True)
+        await q.answer("This gift request has expired or does not belong to you.", show_alert=True)
         return
     import json
     data = json.loads(pending["payload"])
@@ -1277,7 +1274,7 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await _edit_photo_or_text(q, "The gift has been successfully cancelled.")
         return
     if not storage.owned_waifu(q.from_user.id, data["waifu_id"]):
-        await q.answer("Waifu ab tumhari collection mein nahi hai.", show_alert=True)
+        await q.answer("This character is no longer in your collection.", show_alert=True)
         return
     with storage.connect() as con:
         con.execute("BEGIN IMMEDIATE")
@@ -1292,7 +1289,7 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         if cur.rowcount != 1:
             con.rollback()
-            await q.answer("Gift process nahi ho saka.", show_alert=True)
+            await q.answer("The gift could not be completed.", show_alert=True)
             return
         con.execute(
             "INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)",
@@ -1305,7 +1302,7 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         con.commit()
     storage.finish_pending(token, "done")
     await q.answer("Gift successful!")
-    await _edit_photo_or_text(q, f"🎉 GIFT SUCCESSFUL!\n\nCharacter ID: {data['waifu_id']}\n{data['receiver_name']} ko successfully gift kar di gayi hai.")
+    await _edit_photo_or_text(q, f"🎉 GIFT SUCCESSFUL!\n\nCharacter ID: {data['waifu_id']}\nSuccessfully gifted to {data['receiver_name']}.")
     gifted = storage.get_waifu(data["waifu_id"])
     if gifted:
         try:
@@ -1328,7 +1325,7 @@ async def sell_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             if not 1 <= percent <= 100:
                 raise ValueError
         except ValueError:
-            await update.effective_message.reply_text("Sell percentage 1–100 ke darmiyan hona chahiye.")
+            await update.effective_message.reply_text("The sell percentage must be between 1 and 100.")
             return
         with storage.connect() as con:
             con.execute("INSERT INTO rarity_settings(rarity,sell_percent) VALUES (?,?) ON CONFLICT(rarity) DO UPDATE SET sell_percent=excluded.sell_percent", (rarity, percent))
@@ -1364,7 +1361,7 @@ async def sell_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if len(args) > 5:
         return
     if any(not storage.owned_waifu(uid, wid) for wid in args):
-        await update.effective_message.reply_text("❌ In IDs mein se koi waifu tumhari collection mein nahi.")
+        await update.effective_message.reply_text("❌ None of these IDs belong to your collection.")
         return
     day_start = int(datetime.now(ZoneInfo("Asia/Karachi")).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
     with storage.connect() as con:
@@ -1373,7 +1370,7 @@ async def sell_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             (uid, day_start)
         ).fetchone()["n"]
     if sold_today + len(args) > 5:
-        await update.effective_message.reply_text("Daily limit: maximum 5 waifus sell kar sakte ho.")
+        await update.effective_message.reply_text("Daily limit reached: you can sell a maximum of 5 characters.")
         return
     token = storage.create_pending(uid, "sell_waifus", {"ids": args}, 60)
     total = 0
@@ -1397,7 +1394,7 @@ async def sell_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     action, token = q.data.split(":")
     pending = storage.get_pending(token, q.from_user.id, "sell_waifus") or storage.get_pending(token, q.from_user.id, "sell_diamonds")
     if not pending:
-        await q.answer("Sell request expire ho gayi ya tumhari nahi hai.", show_alert=True)
+        await q.answer("This sale request has expired or does not belong to you.", show_alert=True)
         return
     import json
     data = json.loads(pending["payload"])
