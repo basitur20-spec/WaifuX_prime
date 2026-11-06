@@ -305,8 +305,8 @@ async def auction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.effective_message.reply_text("Starting bid positive ho aur duration 1–168 hours.")
         return
     w = storage.get_waifu(wid)
-    if not w:
-        await update.effective_message.reply_text("THIS WAIFU IS NOT UPLOADED IN BOT DATABASE.")
+    if not w or not w["image_file_id"]:
+        await update.effective_message.reply_text("THIS WAIFU IS NOT UPLOADED WITH A VALID IMAGE IN BOT DATABASE.")
         return
     try:
         with storage.connect() as con:
