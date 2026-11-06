@@ -406,31 +406,63 @@ def _collection_keyboard(uid, page, count):
     ])
 
 
-async def fav_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not context.args or not context.args[0].isdigit():
-        await update.effective_message.reply_text("Usage: /fav <waifu_id>")
-        return
-    w = storage.owned_waifu(update.effective_user.id, context.args[0])
+async def _send_fav_confirmation(message, uid: int, wid: str):
+    w = storage.owned_waifu(uid, wid)
     if not w:
-        await update.effective_message.reply_text("😔 Ye waifu tumhari collection mein nahi hai.")
+        await message.reply_text("😔 Ye waifu tumhari collection mein nahi hai.")
         return
-    token = storage.create_pending(update.effective_user.id, "favorite", {"waifu_id": w["waifu_id"]}, 60)
+    token = storage.create_pending(uid, "favorite", {"waifu_id": w["waifu_id"]}, 60)
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("INLINE", callback_data=f"favinline:{token}"),
         InlineKeyboardButton("COLLECTION", callback_data=f"favconfirm:{token}"),
         InlineKeyboardButton("CANCEL", callback_data=f"favcancel:{token}")
     ]])
+    caption = f"Do you really want to set {w['name']} as your favourite waifu?"
     if w["image_file_id"]:
-        await update.effective_message.reply_photo(
-            w["image_file_id"],
-            caption=f"Do you really want to set {w['name']} as your favourite waifu?",
-            reply_markup=keyboard
-        )
+        await message.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
     else:
-        await update.effective_message.reply_text(
-            f"Do you really want to set {w['name']} as your favourite waifu?",
-            reply_markup=keyboard
-        )
+        await message.reply_text(caption, reply_markup=keyboard)
+
+
+def _fav_list_keyboard(uid: int, rows, page: int):
+    unique = list({w["waifu_id"]: w for w in rows}.values())
+    pages = max(1, (len(unique) + 9) // 10)
+    page = max(0, min(page, pages - 1))
+    buttons = []
+    for w in unique[page*10:(page+1)*10]:
+        icon = RARITIES.get(w["rarity"], ("✨",))[0]
+        buttons.append([InlineKeyboardButton(
+            f"{icon} {w['name']} | {w['waifu_id']}",
+            callback_data=f"favpick:{uid}:{w['waifu_id']}"
+        )])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀ Prev", callback_data=f"favlist:{uid}:{page-1}"))
+    nav.append(InlineKeyboardButton(f"{page+1}/{pages}", callback_data="favnoop"))
+    if page + 1 < pages:
+        nav.append(InlineKeyboardButton("Next ▶", callback_data=f"favlist:{uid}:{page+1}"))
+    buttons.append(nav)
+    buttons.append([InlineKeyboardButton("❌ Close", callback_data=f"favlistclose:{uid}")])
+    return InlineKeyboardMarkup(buttons)
+
+
+async def fav_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    if context.args:
+        wid = context.args[0]
+        if not wid.isdigit():
+            await update.effective_message.reply_text("Usage: /fav <waifu_id>")
+            return
+        await _send_fav_confirmation(update.effective_message, uid, wid)
+        return
+    rows = storage.collection(uid)
+    if not rows:
+        await update.effective_message.reply_text("Your collection is empty.")
+        return
+    await update.effective_message.reply_text(
+        "❤️ CHOOSE A WAIFU TO SET AS YOUR FAVOURITE:",
+        reply_markup=_fav_list_keyboard(uid, rows, 0)
+    )
 
 
 async def waifu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
