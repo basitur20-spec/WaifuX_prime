@@ -1040,11 +1040,15 @@ async def gift_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await msg.reply_text("⚠️ Receiver already owns this waifu. Duplicate gifting is not allowed.")
         return
     token = storage.create_pending(giver, "gift", {"receiver_id": receiver.id, "waifu_id": w["waifu_id"], "receiver_name": receiver.full_name}, 60)
-    await msg.reply_photo(w["image_file_id"], caption=f"🎁 GIFT CONFIRMATION\n\n{_display(w)}\n\nReceiver: {receiver.full_name}\nRequest 1 minute mein expire ho jayegi.\nGift confirm karna hai?",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Confirm", callback_data=f"giftok:{token}"),
-            InlineKeyboardButton("❌ Cancel", callback_data=f"giftno:{token}")
-        ]]))
+    caption = f"🎁 GIFT CONFIRMATION\n\n{_display(w)}\n\nReceiver: {receiver.full_name}\nRequest 1 minute mein expire ho jayegi.\nGift confirm karna hai?"
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Confirm", callback_data=f"giftok:{token}"),
+        InlineKeyboardButton("❌ Cancel", callback_data=f"giftno:{token}")
+    ]])
+    if w["image_file_id"]:
+        await msg.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
+    else:
+        await msg.reply_text(caption, reply_markup=keyboard)
 
 
 async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1275,8 +1279,12 @@ async def dupload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await msg.reply_text("Waifu not found.")
         return
     token = storage.create_pending(update.effective_user.id, "delete_waifu", {"waifu_id": wid}, 60)
-    await msg.reply_photo(w["image_file_id"], caption=f"Delete {w['name']} ({wid}) from the catalogue and all collections?",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Confirm Delete", callback_data=f"delok:{token}"), InlineKeyboardButton("Cancel", callback_data=f"delno:{token}")]]))
+    caption = f"Delete {w['name']} ({wid}) from the catalogue and all collections?"
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Confirm Delete", callback_data=f"delok:{token}"), InlineKeyboardButton("Cancel", callback_data=f"delno:{token}")]])
+    if w["image_file_id"]:
+        await msg.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
+    else:
+        await msg.reply_text(caption, reply_markup=keyboard)
 
 
 async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
