@@ -31,6 +31,16 @@ def connect() -> Iterator[sqlite3.Connection]:
         con.close()
 
 
+def raw_connect() -> sqlite3.Connection:
+    """Return a manually managed connection for legacy-style try/finally blocks."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(DB_PATH, timeout=20, isolation_level=None)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys=ON")
+    con.execute("PRAGMA busy_timeout=20000")
+    return con
+
+
 def init_db() -> None:
     with connect() as con:
         con.executescript("""
