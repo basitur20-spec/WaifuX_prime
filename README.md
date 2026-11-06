@@ -41,7 +41,7 @@ Never commit tokens, local databases, or user data. Back up the complete `data/`
 | Gameplay | `/hunt <name>` in groups, `/waifu`, `/marriage`, `/propose` |
 | Collection transfer | `/gift <waifu_id>` by reply, `/trade <your_id> <their_id>` by reply |
 | Economy | `/sell <waifu_id> [more_ids]`, `/sell diamonds <amount>`, plus the preserved economy/game commands |
-| Marketplace | `/marketplace`, `/auction <waifu_id> <starting_bid> [hours]`, `/bid <amount>`, `/auction users` |
+| Marketplace | `/marketplace`, `/marketspawn <rarity> on/off`, `/auction <waifu_id> <starting_bid> [hours]`, `/bid <amount>`, `/auction users` |
 | Admin | `/spawn <rarity> on/off`, `/changetime <2-120 minutes>`, `/give`, `/gclaim`, `/claim`, `/stop`, `/run`, `/send` |
 | Group filters | `/filter <keyword> | <response>`, `/filters`, `/delfilter <keyword>`, `/delall` |
 
@@ -80,4 +80,4 @@ Name, rarity and anime are required. Price and ID may be omitted; the bot choose
 
 GitHub Actions runs Python compilation and pytest. Passing CI verifies syntax and the offline storage/migration tests; it does **not** replace a live Telegram test. Before production deployment, test the bot in a private group with disposable users and a backup database.
 
-The current upload flow validates fields and chooses a price within the rarity band; it does not perform AI spelling correction or image-quality analysis. Anti-spam muting requires the bot to have administrator permission to restrict members. User records are identified by Telegram user IDs; no separate bot-generated public ID layer is currently configured. Review `docs/KNOWN_ISSUES.md` before merging.
+The current upload flow validates fields and chooses a price within the rarity band; it does not perform AI spelling correction or image-quality analysis. Anti-spam muting requires the bot to have administrator permission to restrict members. Each user receives a stable 11-digit bot ID; Telegram IDs remain internal. Profile, collection and privileged-gift lookup accept the bot ID or a known username. Review `docs/KNOWN_ISSUES.md` before merging.
