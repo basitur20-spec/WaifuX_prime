@@ -36,7 +36,7 @@ Never commit tokens, local databases, or user data. Back up the complete `data/`
 | Feature | Commands |
 |---|---|
 | Start/help | `/start`, `/help` |
-| Collection | `/collection [@username|user_id]`, `/fav <waifu_id>`, `/dmode`, `/setprofile`, `/profile [@username|user_id]` |
+| Collection | `/collection [@username|user_id]`, `/fav [waifu_id]` / `/fave`, `/dmode`, `/setprofile`, `/profile [@username|user_id]` |
 | Catalogue | `/upload`, `/dupload <waifu_id>`, `/f <waifu_id>`, `/find <waifu_id>`, `/dfind <name>` |
 | Gameplay | `/hunt <name>` in groups, `/waifu`, `/marriage`, `/propose` |
 | Collection transfer | `/gift <waifu_id>` by reply, `/trade <your_id> <their_id>` by reply |
