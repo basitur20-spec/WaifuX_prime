@@ -22,7 +22,7 @@ def test_runtime_modules_import_and_register_core_commands(tmp_path, monkeypatch
     expected = {
         "start", "help", "upload", "hunt", "waifu", "collection", "fav",
         "profile", "find", "dfind", "f", "gift", "trade", "sell",
-        "marketplace", "auction", "bid", "claim", "gclaim", "filter",
+        "marketplace", "marketspawn", "auction", "bid", "claim", "gclaim", "filter",
         "delfilter", "delall", "send", "stop", "run", "dmode",
     }
     assert expected <= commands
