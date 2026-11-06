@@ -6,9 +6,12 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import json
 import os
-import difflib
-import os
+import random
+import re
+import time
+import urllib.request
 import random
 import re
 import time
@@ -16,7 +19,7 @@ from collections import defaultdict, deque
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
 from telegram.constants import ChatType
 from telegram.ext import ContextTypes
 
@@ -740,6 +743,55 @@ async def marriage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.effective_message.reply_photo(w["image_file_id"], caption=f"💍 Congratulations! You are now married!\n{_display(w)}")
 
 
+def _request_waifu_api_images(limit: int = 3) -> list[str]:
+    """Fetch SFW anime image URLs from Waifu API."""
+    request = urllib.request.Request(
+        f"https://api.waifu.best/images?PageSize={limit}&IsNsfw=False",
+        headers={"Accept-Version": "v7", "User-Agent": "WaifuX-Prime/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=12) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    urls = []
+    for item in payload.get("items", []):
+        url = item.get("url")
+        if isinstance(url, str) and url.startswith("https://"):
+            urls.append(url)
+    return urls
+
+
+async def _proposal_intro_image() -> str | None:
+    """Use one persistent intro image for every user and every bot restart."""
+    cache_path = storage.DATA_DIR / "propose_intro_image_url.txt"
+    try:
+        if cache_path.exists():
+            cached = cache_path.read_text(encoding="utf-8").strip()
+            if cached.startswith("https://"):
+                return cached
+        urls = await asyncio.to_thread(_request_waifu_api_images, 1)
+        if not urls:
+            return None
+        storage.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(urls[0], encoding="utf-8")
+        return urls[0]
+    except Exception:
+        return None
+
+
+async def _proposal_gallery_images(intro_url: str | None) -> list[str]:
+    """Fetch three fresh SFW anime pictures for the proposal gallery."""
+    try:
+        urls = await asyncio.to_thread(_request_waifu_api_images, 6)
+        unique = []
+        for url in urls:
+            if url != intro_url and url not in unique:
+                unique.append(url)
+            if len(unique) == 3:
+                break
+        return unique
+    except Exception:
+        return []
+
+
 async def propose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     with storage.connect() as con:
@@ -754,44 +806,70 @@ async def propose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         cash = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (uid,)).fetchone()["cash"]
         if cash < 30_000:
             con.rollback()
-            await update.effective_message.reply_text("YOU NEED 30,000 CASH💸 TO PROPOSE.")
+            await update.effective_message.reply_text("You need 30,000 Cash 💸 to propose.")
             return
         con.execute("UPDATE user_balance SET cash=cash-30000 WHERE user_id=?", (uid,))
         con.execute("INSERT INTO cooldowns(user_id,action,expires_at) VALUES (?,?,?) ON CONFLICT(user_id,action) DO UPDATE SET expires_at=excluded.expires_at", (uid, "propose", storage.now()+300))
         con.execute("INSERT INTO transactions(tx_id,actor_id,action,amount,created_at) VALUES (?,?,?,?,?)", (__import__("uuid").uuid4().hex, uid, "propose_fee", 30000, storage.now()))
         con.commit()
-    try:
-        await context.bot.copy_message(
-            chat_id=update.effective_chat.id,
-            from_chat_id="@movieandweb_s_group",
-            message_id=17959,
-            caption=f"{update.effective_user.first_name} 💫 The moment you've been waiting for 💫"
-        )
-    except Exception:
+
+    intro_url = await _proposal_intro_image()
+    if intro_url:
+        try:
+            await update.effective_message.reply_photo(
+                intro_url,
+                caption=f"💫 {update.effective_user.first_name}, the moment you've been waiting for... 💫",
+            )
+        except Exception:
+            await update.effective_message.reply_text(
+                f"💫 {update.effective_user.first_name}, the moment you've been waiting for... 💫"
+            )
+    else:
         await update.effective_message.reply_text(
-            f"{update.effective_user.first_name} 💫 The moment you've been waiting for 💫"
+            f"💫 {update.effective_user.first_name}, the moment you've been waiting for... 💫"
         )
-    processing = await update.effective_message.reply_text("ᴘʀᴏᴘᴏꜱɪɴɢ ʜᴇʀ.... 💍")
+
+    gallery_urls = await _proposal_gallery_images(intro_url)
+    if gallery_urls:
+        try:
+            gallery = [
+                InputMediaPhoto(
+                    media=url,
+                    caption="💍 Gathering courage for the proposal...\nAnime images via Waifu API." if index == 0 else None,
+                )
+                for index, url in enumerate(gallery_urls)
+            ]
+            processing_messages = await context.bot.send_media_group(
+                chat_id=update.effective_chat.id,
+                media=gallery,
+                reply_to_message_id=update.effective_message.message_id,
+            )
+            processing = processing_messages[0]
+        except Exception:
+            processing = await update.effective_message.reply_text(
+                "💍 Gathering courage for the proposal..."
+            )
+    else:
+        processing = await update.effective_message.reply_text(
+            "💍 Gathering courage for the proposal..."
+        )
+
     await asyncio.sleep(random.randint(3, 5))
     if random.uniform(0, 100) <= random.randint(35, 45):
         w = _random_waifu(["ChristmasArc", "RoyalArc", "NeonArc", "CelestialArc"])
         if w:
             storage.add_to_collection(uid, w["waifu_id"], "propose")
-            await processing.reply_photo(w["image_file_id"], caption=f"💖 {w['name']} has accepted your proposal!\n{_display(w)}")
+            await processing.reply_photo(
+                w["image_file_id"],
+                caption=f"💖 {w['name']} has accepted your proposal!\n{_display(w)}",
+            )
             return
+
     rejection = random.choice([
-        (18022, "You've been friend-zoned so hard, you're now the mayor of friend zone city! 🏙️"),
-        (17925, "Breaking news: local simp gets rejected so hard! 🥲🛏️")
+        "You've been friend-zoned so hard, you're now the mayor of Friend Zone City! 🏙️",
+        "Breaking news: local simp gets rejected so hard! 🥲",
     ])
-    try:
-        await context.bot.copy_message(
-            chat_id=update.effective_chat.id,
-            from_chat_id="@movieandweb_s_group",
-            message_id=rejection[0],
-            caption=rejection[1]
-        )
-    except Exception:
-        await processing.reply_text(rejection[1])
+    await processing.reply_text(rejection)
 
 
 async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
