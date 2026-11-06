@@ -100,7 +100,6 @@ def register_handlers(app: Application, owner_id: int) -> None:
         "mines": legacy.mines_cmd,
         "endmines": legacy.endmines,
         "dtops": legacy.dtops_cmd,
-        "collection": legacy.collection_cmd,
         "gen": legacy.gen_cmd,
         "redeem": redeem_command,
         "dgen": legacy.dgen_cmd,
@@ -135,6 +134,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
         "stop": waifu.stop_cmd,
         "run": waifu.run_cmd,
     }
+    app.add_handler(MessageHandler(filters.COMMAND, waifu.command_guard), group=-1)
     for name, callback in command_map.items():
         app.add_handler(CommandHandler(name, callback))
 
