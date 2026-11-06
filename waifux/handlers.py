@@ -196,6 +196,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
     app.add_handler(CallbackQueryHandler(waifu.delete_callback, pattern=r"^del(?:ok|no):"))
     app.add_handler(CallbackQueryHandler(marketplace.marketplace_callback, pattern=r"^mkt:"))
     app.add_handler(CallbackQueryHandler(marketplace.auction_callback, pattern=r"^aucbid:"))
+    app.add_handler(CallbackQueryHandler(marketplace.bid_callback, pattern=r"^bid(?:ok|no):"))
     app.add_handler(CallbackQueryHandler(social.trade_callback, pattern=r"^trd(?:accept|cancel):"))
     app.add_handler(CallbackQueryHandler(social.give_callback, pattern=r"^giv(?:eok|no):"))
     app.add_handler(InlineQueryHandler(waifu.inline_collection))
