@@ -327,7 +327,7 @@ def _collection_keyboard(uid, page, count):
         [InlineKeyboardButton("◀ Prev", callback_data=f"col:{uid}:{max(0,page-1)}"),
          InlineKeyboardButton("Next ▶", callback_data=f"col:{uid}:{min(pages-1,page+1)}")],
         [InlineKeyboardButton("✨ Waifus", callback_data=f"colimg:{uid}:{uid}:{page}")],
-        [InlineKeyboardButton("❌ Close", callback_data=f"colclose:{uid}")]
+        [InlineKeyboardButton("❌ Close", callback_data=f"colclose:{uid}:{uid}")]
     ])
 
 
