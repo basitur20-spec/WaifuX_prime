@@ -122,45 +122,65 @@ async def give_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     if not (_owner(uid) or _sudo(uid) or _uploader(uid)):
         return
+    msg = update.effective_message
+    replied_user = msg.reply_to_message.from_user if msg.reply_to_message else None
     if context.args and context.args[0].lower() == "history":
         if not _owner(uid):
             return
         with storage.connect() as con:
-            rows = con.execute(
-                "SELECT actor_id,target_id,waifu_id,created_at FROM transactions WHERE action='admin_gift' ORDER BY created_at DESC LIMIT 30"
-            ).fetchall()
+            if replied_user:
+                rows = con.execute(
+                    "SELECT actor_id,target_id,waifu_id,created_at FROM transactions WHERE action='admin_gift' AND actor_id=? ORDER BY created_at DESC LIMIT 30",
+                    (replied_user.id,)
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    "SELECT actor_id,target_id,waifu_id,created_at FROM transactions WHERE action='admin_gift' ORDER BY created_at DESC LIMIT 30"
+                ).fetchall()
         if not rows:
-            await update.effective_message.reply_text("No admin gift history yet.")
+            await msg.reply_text("📭 No give history found.")
             return
-        await update.effective_message.reply_text(
-            "🎁 LAST 30 ADMIN GIFTS\n" + "\n".join(
-                f"{i}. {r['actor_id']} → {r['target_id']} | Waifu {r['waifu_id']}"
+        await msg.reply_text(
+            "📜 GIVE COMMAND HISTORY\n" + "\n".join(
+                f"{i}. {r['actor_id']} → {r['target_id']} | Waifu {r['waifu_id']} | {r['created_at']}"
                 for i, r in enumerate(rows, 1)
             )
         )
         return
-    msg = update.effective_message
-    target = msg.reply_to_message.from_user if msg.reply_to_message else None
-    if not target or target.is_bot:
-        await msg.reply_text("Usage: reply to a user and send /give <waifu_id>.")
-        return
     if not context.args or not context.args[0].isdigit():
-        await msg.reply_text("Usage: /give <waifu_id>")
+        await msg.reply_text("📦 GIVE WAIFU — USAGE GUIDE\nReply to a user: /give <waifu_id>\nUsing username or user ID: /give <waifu_id> @username_or_id")
         return
-    if target.id == uid and not _owner(uid):
-        await msg.reply_text("Sudo/uploader apne aap ko waifu gift nahi kar sakte.")
+    target_id = None
+    target_name = None
+    if replied_user and not replied_user.is_bot:
+        target_id, target_name = replied_user.id, replied_user.full_name
+    elif len(context.args) >= 2:
+        target_ref = context.args[1].lstrip("@")
+        with storage.connect() as con:
+            if target_ref.isdigit():
+                target = con.execute("SELECT user_id,first_name,username FROM user_profiles WHERE user_id=?", (int(target_ref),)).fetchone()
+            else:
+                target = con.execute("SELECT user_id,first_name,username FROM user_profiles WHERE lower(username)=lower(?)", (target_ref,)).fetchone()
+        if target:
+            target_id = int(target["user_id"])
+            target_name = target["first_name"] or (f"@{target['username']}" if target["username"] else str(target_id))
+    if target_id is None:
+        await msg.reply_text("⚠️ User not found. Reply to their message or use a username/user ID already known to the bot.")
+        return
+    if target_id == uid and not _owner(uid):
+        await msg.reply_text("🚫 Sudo/uploader apne aap ko waifu gift nahi kar sakte.")
         return
     w = storage.get_waifu(context.args[0])
     if not w:
-        await msg.reply_text("Waifu ID bot database mein nahi mili.")
+        await msg.reply_text("⚠️ Invalid Waifu ID. This waifu does not exist.")
         return
     token = storage.create_pending(uid, "admin_gift", {
-        "target_id": target.id, "waifu_id": w["waifu_id"], "target_name": target.full_name
+        "target_id": target_id, "waifu_id": w["waifu_id"], "target_name": target_name
     }, 60)
     await msg.reply_photo(
-        w["image_file_id"], caption=f"🎁 ADMIN GIFT\n{_display(w)}\nReceiver: {target.full_name}\nConfirm gift?",
+        w["image_file_id"], caption=f"🎁 CONFIRM WAIFU GIFT\n{_display(w)}\nReceiver: {target_name}\nConfirm gift?",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Confirm", callback_data=f"giveok:{token}"),
+            InlineKeyboardButton("✅ Confirm Gift", callback_data=f"giveok:{token}"),
             InlineKeyboardButton("❌ Cancel", callback_data=f"givno:{token}")
         ]])
     )
