@@ -488,9 +488,7 @@ async def hunt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         con.execute("BEGIN IMMEDIATE")
         spawn = con.execute("SELECT * FROM active_spawns WHERE chat_id=?", (msg.chat_id,)).fetchone()
         if not spawn or spawn["expires_at"] <= storage.now():
-            if spawn:
-                con.execute("DELETE FROM active_spawns WHERE chat_id=?", (msg.chat_id,))
-            con.commit()
+            con.rollback()
             await msg.reply_text("❌ NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEXT SPAWN.")
             return
         w = con.execute("SELECT * FROM waifus WHERE waifu_id=? AND deleted_at IS NULL", (spawn["waifu_id"],)).fetchone()
@@ -544,8 +542,9 @@ async def group_activity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     con = storage.raw_connect()
     try:
-        active = con.execute("SELECT 1 FROM active_spawns WHERE chat_id=? AND expires_at>?", (chat_id, storage.now())).fetchone()
+        active = con.execute("SELECT 1 FROM active_spawns WHERE chat_id=?", (chat_id,)).fetchone()
         if active:
+            # The expiry job owns cleanup and the escape announcement.
             return
         con.execute("INSERT OR IGNORE INTO group_settings(chat_id) VALUES (?)", (chat_id,))
         settings = con.execute("SELECT * FROM group_settings WHERE chat_id=?", (chat_id,)).fetchone()
