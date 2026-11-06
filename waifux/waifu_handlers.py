@@ -1044,6 +1044,11 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     with storage.connect() as con:
         con.execute("BEGIN IMMEDIATE")
+        already_owned = con.execute("SELECT 1 FROM user_waifus WHERE user_id=? AND waifu_id=? LIMIT 1", (data["receiver_id"], data["waifu_id"])).fetchone()
+        if already_owned:
+            con.rollback()
+            await q.answer("Receiver already owns this waifu.", show_alert=True)
+            return
         cur = con.execute(
             "DELETE FROM user_waifus WHERE id=(SELECT id FROM user_waifus WHERE user_id=? AND waifu_id=? ORDER BY obtained_at LIMIT 1)",
             (q.from_user.id, data["waifu_id"])
