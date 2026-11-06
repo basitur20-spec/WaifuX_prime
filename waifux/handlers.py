@@ -186,7 +186,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
     for pattern, callback in callback_map:
         app.add_handler(CallbackQueryHandler(callback, pattern=pattern))
 
-    app.add_handler(CallbackQueryHandler(waifu.collection_callback, pattern=r"^(?:col|colimg|colclose):"))
+    app.add_handler(CallbackQueryHandler(waifu.collection_callback, pattern=r"^(?:col|colimg|colclose|colimgclose):|^colimgnoop$"))
     app.add_handler(CallbackQueryHandler(waifu.dmode_callback, pattern=r"^(?:dmode:|dmrarity:|dmchoices:|dmback:|dmset:|dmpick:|dmclose:|dmnoop$)"))
     app.add_handler(CallbackQueryHandler(waifu.find_callback, pattern=r"^(?:find:|finddel:|findnoop$)"))
     app.add_handler(CallbackQueryHandler(waifu.dfind_callback, pattern=r"^(?:dfind:|dfinddel:|dfindnoop$)"))
