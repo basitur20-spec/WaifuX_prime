@@ -108,8 +108,10 @@ def _random_waifu(rarities: list[str] | None = None):
         finally:
             setting.close()
         pool = storage.list_waifus(rarity, 500)
+        with storage.connect() as con:
+            active_ids = {row["waifu_id"] for row in con.execute("SELECT waifu_id FROM auctions WHERE status='active'")}
         if pool:
-            available.extend((rarity, w) for w in pool)
+            available.extend((rarity, w) for w in pool if w["waifu_id"] not in active_ids)
     if not available:
         return None
     names = list(dict.fromkeys(r for r, _ in available))
@@ -219,8 +221,9 @@ async def collection_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not rows:
         await update.effective_message.reply_text("📚 Your collection abhi empty hai. /waifu ya /hunt try karo.")
         return
-    fav = next((w for w in rows if w["is_favorite"]), None)
-    if fav:
+    favourites = [w for w in storage.collection(uid) if w["is_favorite"]]
+    if favourites:
+        fav = favourites[0]
         await update.effective_message.reply_photo(fav["image_file_id"], caption=f"❤️ Your favourite waifu\n{_display(fav)}")
     await _send_collection(update.effective_message, uid, 0, rows, owner_id=uid)
 
@@ -374,17 +377,22 @@ async def inline_collection(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
-    left = storage.cooldown_left(uid, "daily_waifu")
-    if left:
-        await update.effective_message.reply_text(f"⏳ Please wait {left//3600:02d}:{(left%3600)//60:02d}:{left%60:02d} before claiming your next waifu.")
-        return
     w = _random_waifu(["Starter", "Rising", "Shiny", "Ultimate", "RoyalArc"])
     if not w:
         await update.effective_message.reply_text("Abhi reward pool mein waifus available nahi hain.")
         return
-    storage.add_to_collection(uid, w["waifu_id"], "daily")
-    storage.set_cooldown(uid, "daily_waifu", 12 * 60 * 60)
-    storage.record_transaction(uid, "daily_waifu", waifu_id=w["waifu_id"])
+    with storage.connect() as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT expires_at FROM cooldowns WHERE user_id=? AND action='daily_waifu'", (uid,)).fetchone()
+        left = max(0, int(row["expires_at"]) - storage.now()) if row else 0
+        if left:
+            con.rollback()
+            await update.effective_message.reply_text(f"⏳ Please wait {left//3600:02d}:{(left%3600)//60:02d}:{left%60:02d} before claiming your next waifu.")
+            return
+        con.execute("INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)", (uid, w["waifu_id"], storage.now(), "daily"))
+        con.execute("INSERT INTO cooldowns(user_id,action,expires_at) VALUES (?,?,?) ON CONFLICT(user_id,action) DO UPDATE SET expires_at=excluded.expires_at", (uid, "daily_waifu", storage.now()+12*60*60))
+        con.execute("INSERT INTO transactions(tx_id,actor_id,action,waifu_id,created_at) VALUES (?,?,?,?,?)", (__import__("uuid").uuid4().hex, uid, "daily_waifu", w["waifu_id"], storage.now()))
+        con.commit()
     await update.effective_message.reply_photo(
         w["image_file_id"],
         caption=f"🎉 Congratulations {update.effective_user.first_name}! You won!\n{_display(w)}"
@@ -396,38 +404,44 @@ async def hunt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if msg.chat.type == ChatType.PRIVATE:
         await msg.reply_text("Hunt sirf groups mein active hota hai.")
         return
+    supplied = " ".join(context.args).casefold().strip()
+    if not supplied:
+        await msg.reply_text("Usage: /hunt <character name>")
+        return
     con = storage.raw_connect()
     try:
+        con.execute("BEGIN IMMEDIATE")
         spawn = con.execute("SELECT * FROM active_spawns WHERE chat_id=?", (msg.chat_id,)).fetchone()
         if not spawn or spawn["expires_at"] <= storage.now():
             if spawn:
                 con.execute("DELETE FROM active_spawns WHERE chat_id=?", (msg.chat_id,))
+            con.commit()
             await msg.reply_text("❌ NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEXT SPAWN.")
             return
-        w = storage.get_waifu(spawn["waifu_id"])
+        w = con.execute("SELECT * FROM waifus WHERE waifu_id=? AND deleted_at IS NULL", (spawn["waifu_id"],)).fetchone()
         if not w:
             con.execute("DELETE FROM active_spawns WHERE chat_id=?", (msg.chat_id,))
+            con.commit()
             await msg.reply_text("❌ NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEXT SPAWN.")
-            return
-        supplied = " ".join(context.args).casefold().strip()
-        if not supplied:
-            await msg.reply_text("Usage: /hunt <character name>")
             return
         names = [w["name"], *(__import__("json").loads(w["aliases"] or "[]"))]
         words = {part.casefold() for name in names for part in re.findall(r"[\w]+", name)}
         supplied_words = set(re.findall(r"[\w]+", supplied))
         if not (supplied_words & words) and supplied != w["name"].casefold():
+            con.rollback()
             await msg.reply_text("❌ NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEXT SPAWN.")
             return
-        storage.add_to_collection(msg.from_user.id, w["waifu_id"], "hunt")
+        con.execute("INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)", (msg.from_user.id, w["waifu_id"], storage.now(), "hunt"))
         con.execute("DELETE FROM active_spawns WHERE chat_id=?", (msg.chat_id,))
-        await msg.reply_photo(
-            w["image_file_id"],
-            caption=f"🎉 Congratulations {msg.from_user.first_name}! You got a new waifu!\n{_display(w)}\n\nCheck /collection now.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("COLLECTION 🔥", callback_data=f"col:{msg.from_user.id}:0")]])
-        )
+        con.execute("INSERT INTO transactions(tx_id,actor_id,action,waifu_id,created_at) VALUES (?,?,?,?,?)", (__import__("uuid").uuid4().hex, msg.from_user.id, "hunt", w["waifu_id"], storage.now()))
+        con.commit()
     finally:
         con.close()
+    await msg.reply_photo(
+        w["image_file_id"],
+        caption=f"🎉 Congratulations {msg.from_user.first_name}! You got a new waifu!\n{_display(w)}\n\nCheck /collection now.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("COLLECTION 🔥", callback_data=f"col:{msg.from_user.id}:0")]])
+    )
 
 
 async def group_activity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
