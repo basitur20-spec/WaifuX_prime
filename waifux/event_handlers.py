@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+import asyncio
 
 from telegram import Update
 from telegram.constants import ChatMemberStatus, ChatType
@@ -187,20 +188,44 @@ async def filter_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def send_all_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _owner(update.effective_user.id):
         return
-    text = update.effective_message.text.partition(" ")[2].strip()
-    if not text and update.effective_message.reply_to_message:
-        source = update.effective_message.reply_to_message
-        text = source.text or source.caption or ""
-    if not text:
-        await update.effective_message.reply_text("Usage: /send <message> or reply to a message with /send.")
+    msg = update.effective_message
+    text = msg.text.partition(" ")[2].strip()
+    source = msg.reply_to_message
+    if not text and not source:
+        await msg.reply_text("Usage: /send <message> or reply to a message/media with /send.")
         return
     with storage.connect() as con:
         rows = con.execute("SELECT user_id FROM user_profiles").fetchall()
     sent = failed = 0
     for row in rows:
+        target_id = row["user_id"]
         try:
-            await context.bot.send_message(row["user_id"], text)
+            if source:
+                await context.bot.copy_message(
+                    chat_id=target_id,
+                    from_chat_id=msg.chat_id,
+                    message_id=source.message_id
+                )
+            else:
+                await context.bot.send_message(target_id, text)
             sent += 1
-        except Exception:
+        except Exception as exc:
+            retry_after = getattr(exc, "retry_after", None)
+            if retry_after:
+                await asyncio.sleep(float(retry_after))
+                try:
+                    if source:
+                        await context.bot.copy_message(
+                            chat_id=target_id,
+                            from_chat_id=msg.chat_id,
+                            message_id=source.message_id
+                        )
+                    else:
+                        await context.bot.send_message(target_id, text)
+                    sent += 1
+                    continue
+                except Exception:
+                    pass
             failed += 1
-    await update.effective_message.reply_text(f"📢 Broadcast complete. Sent: {sent}, failed: {failed}.")
+        await asyncio.sleep(0.03)
+    await msg.reply_text(f"📢 Broadcast complete. Sent: {sent}, failed: {failed}.")
