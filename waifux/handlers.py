@@ -81,12 +81,26 @@ async def redeem_command(update, context) -> None:
     await legacy.redeem_cmd(update, context)
 
 
+async def dredeem_command(update, context) -> None:
+    await legacy.dredeem_cmd(update, context)
+    uid = update.effective_user.id
+    try:
+        legacy_users = legacy.load_users()
+        owned_ids = legacy_users.get(str(uid), {}).get("collection", [])
+    except Exception:
+        owned_ids = []
+    for wid in owned_ids:
+        if storage.get_waifu(str(wid)) and not storage.owned_waifu(uid, str(wid)):
+            storage.add_to_collection(uid, str(wid), "dredeem")
+
+
 def register_handlers(app: Application, owner_id: int) -> None:
     """Register each command once and route callbacks by specific prefixes."""
     _install_runtime_roles(owner_id)
     waifu.configure(owner_id)
     legacy.ensure_files()
     legacy.init_collection_db()
+    storage.migrate_legacy_data()
 
     command_map = {
         "start": legacy.start,
@@ -106,7 +120,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
         "gen": legacy.gen_cmd,
         "redeem": redeem_command,
         "dgen": legacy.dgen_cmd,
-        "dredeem": legacy.dredeem_cmd,
+        "dredeem": dredeem_command,
         "redeemtoggle": legacy.redeem_toggle,
         "dredeemtoggle": legacy.dredeem_toggle,
         "addsudo": legacy.add_sudo,
