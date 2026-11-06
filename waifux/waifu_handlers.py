@@ -226,7 +226,7 @@ async def collection_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         target = context.args[0].lstrip("@")
         with storage.connect() as con:
             if target.isdigit():
-                profile = con.execute("SELECT user_id FROM user_profiles WHERE user_id=?", (int(target),)).fetchone()
+                profile = con.execute("SELECT user_id FROM user_profiles WHERE bot_user_id=? OR user_id=?", (target, int(target))).fetchone()
             else:
                 profile = con.execute("SELECT user_id FROM user_profiles WHERE lower(username)=lower(?)", (target,)).fetchone()
         if not profile:
@@ -625,13 +625,14 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         search = context.args[0].lstrip("@")
         with storage.connect() as con:
             if search.isdigit():
-                found = con.execute("SELECT * FROM user_profiles WHERE user_id=?", (int(search),)).fetchone()
+                found = con.execute("SELECT * FROM user_profiles WHERE bot_user_id=? OR user_id=?", (search, int(search))).fetchone()
             else:
                 found = con.execute("SELECT * FROM user_profiles WHERE lower(username)=lower(?)", (search,)).fetchone()
         if not found:
             await update.effective_message.reply_text("⚠️ User not found. User ko pehle bot start karna hoga.")
             return
         target_id = int(found["user_id"])
+    bot_user_id = storage.ensure_bot_user_id(target_id)
     with storage.connect() as con:
         profile = con.execute("SELECT * FROM user_profiles WHERE user_id=?", (target_id,)).fetchone()
     rows = storage.collection(target_id)
@@ -639,7 +640,7 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     name = (profile["first_name"] if profile else None) or str(target_id)
     username = (profile["username"] if profile else None)
     text = (
-        f"👤 USER PROFILE\n\n🆔 User ID: {target_id}\n👤 Name: {name}\n"
+        f"👤 USER PROFILE\n\n🆔 User ID: {bot_user_id}\n👤 Name: {name}\n"
         f"🔗 Username: @{username or 'N/A'}\n\n💰 Balance: {_fmt(cash)}\n"
         f"💎 Diamonds: {_fmt(diamonds)}\n💖 Waifus Collected: {len(rows)} / {len(storage.list_waifus(limit=10000))}"
     )
@@ -718,7 +719,7 @@ def _find_users_page(waifu_id: str, page: int):
         total = con.execute("SELECT COUNT(*) AS n FROM user_waifus WHERE waifu_id=?", (waifu_id,)).fetchone()["n"]
         rows = con.execute(
             """SELECT uw.user_id,COUNT(*) AS copies,MIN(uw.obtained_at) AS first_obtained,
-            up.username,up.first_name
+            up.username,up.first_name,up.bot_user_id
             FROM user_waifus uw LEFT JOIN user_profiles up ON up.user_id=uw.user_id
             WHERE uw.waifu_id=? GROUP BY uw.user_id
             ORDER BY first_obtained ASC LIMIT 10 OFFSET ?""",
@@ -733,7 +734,7 @@ def _find_caption(w, page: int):
     lines = [f"🌐 CHARACTER INFO\n{_display(w)}\n🌍 GLOBALLY PICKED: {total} times\n",
              f"👥 USERS WHO HAVE THIS WAIFU ({total_users} total):"]
     for index, row in enumerate(rows, page * 10 + 1):
-        name = f"@{row['username']}" if row["username"] else (row["first_name"] or f"User {row['user_id']}")
+        name = f"@{row['username']}" if row["username"] else (row["first_name"] or f"User {row['bot_user_id'] or row['user_id']}")
         lines.append(f"{index}. {name} x{row['copies']}")
     return "\n".join(lines), max(1, (total_users + 9) // 10)
 
