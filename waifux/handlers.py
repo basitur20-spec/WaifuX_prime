@@ -15,6 +15,7 @@ from telegram.ext import (
 
 from legacy import partial_commands as legacy
 from . import waifu_handlers as waifu
+from . import marketplace
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,9 @@ def register_handlers(app: Application, owner_id: int) -> None:
         "dupload": waifu.dupload_cmd,
         "stop": waifu.stop_cmd,
         "run": waifu.run_cmd,
+        "marketplace": marketplace.marketplace_cmd,
+        "auction": marketplace.auction_cmd,
+        "bid": marketplace.bid_cmd,
     }
     app.add_handler(MessageHandler(filters.COMMAND, waifu.command_guard), group=-1)
     for name, callback in command_map.items():
@@ -159,6 +163,9 @@ def register_handlers(app: Application, owner_id: int) -> None:
     app.add_handler(CallbackQueryHandler(waifu.gift_callback, pattern=r"^gift(?:ok|no):"))
     app.add_handler(CallbackQueryHandler(waifu.sell_callback, pattern=r"^sell(?:ok|no):"))
     app.add_handler(CallbackQueryHandler(waifu.delete_callback, pattern=r"^del(?:ok|no):"))
+    app.add_handler(CallbackQueryHandler(marketplace.marketplace_callback, pattern=r"^mkt:"))
+    app.add_handler(CallbackQueryHandler(marketplace.auction_callback, pattern=r"^aucbid:"))
     app.add_handler(InlineQueryHandler(waifu.inline_collection))
     app.add_handler(MessageHandler(filters.ALL, waifu.group_activity), group=1)
+    app.job_queue.run_repeating(marketplace.settle_auctions, interval=60, first=30, name="auction-settlement")
     logger.info("Registered %d commands and %d callback routes", len(command_map), len(callback_map))
