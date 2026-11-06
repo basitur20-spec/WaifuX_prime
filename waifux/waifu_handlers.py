@@ -496,7 +496,7 @@ async def waifu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await q.answer("You no longer own this waifu.", show_alert=True)
             return
         await q.answer()
-        await q.message.delete()
+        await q.edit_message_text("Selected waifu. Confirm your favourite below.")
         await _send_fav_confirmation(q.message, q.from_user.id, wid)
         return
     token = data[1]
