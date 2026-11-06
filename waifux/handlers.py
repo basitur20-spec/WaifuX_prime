@@ -109,10 +109,10 @@ def register_handlers(app: Application, owner_id: int) -> None:
     callback_map = [
         (r"^bonus_", legacy.bonus_callback),
         (r"^pay_", legacy.pay_callback),
-        (r"^(?:mine_\\d+|mines_cashout)$", legacy.mines_callback),
+        (r"^(?:mine_\d+|mines_cashout)$", legacy.mines_callback),
         (r"^dt_", legacy.dtops_callback),
-        (r"^cw_img_\\d+_\\d+$", legacy.collection_image_view),
-        (r"^(?:cw_(?:next|prev)_\\d+_\\d+|cw_close)$", legacy.collection_callback),
+        (r"^cw_img_\d+_\d+$", legacy.collection_image_view),
+        (r"^(?:cw_(?:next|prev)_\d+_\d+|cw_close)$", legacy.collection_callback),
         (r"^SUDO_GUIDE$", legacy.sudo_guide_callback),
         (r"^UPLOADER_GUIDE$", legacy.uploader_guide_callback),
         (r"^(?:OPEN_HELP|HELP_COMMANDS_1|HELP_COMMANDS_2|HELP_GAMES|HELP_BACK_TO_START)$", legacy.callback_router),
