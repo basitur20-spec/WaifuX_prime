@@ -290,12 +290,12 @@ def _collection_image_keyboard(owner_id: int, viewer_id: int, page: int, count: 
 
 async def collection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
+    if q.data == "colimgnoop":
+        await q.answer()
+        return
     parts = q.data.split(":")
     action = parts[0]
     owner_id = int(parts[1])
-    if action == "colimgnoop":
-        await q.answer()
-        return
     if action == "colclose" or action == "colimgclose":
         viewer_id = int(parts[2])
         if q.from_user.id != viewer_id:
@@ -319,7 +319,7 @@ async def collection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=_collection_image_keyboard(owner_id, viewer_id, page, len(images))
         )
         for w in images[page * 10:(page + 1) * 10]:
-            await q.message.reply_photo(w["image_file_id"], caption=f"{w['name']} | {w['waifu_id']}")
+            await q.message.reply_photo(w["image_file_id"])
         return
     if q.from_user.id != owner_id:
         await q.answer("Only the collection owner can change pages.", show_alert=True)
