@@ -158,7 +158,7 @@ async def give_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         target_ref = context.args[1].lstrip("@")
         with storage.connect() as con:
             if target_ref.isdigit():
-                target = con.execute("SELECT user_id,first_name,username FROM user_profiles WHERE user_id=?", (int(target_ref),)).fetchone()
+                target = con.execute("SELECT user_id,first_name,username FROM user_profiles WHERE bot_user_id=? OR user_id=?", (target_ref, int(target_ref))).fetchone()
             else:
                 target = con.execute("SELECT user_id,first_name,username FROM user_profiles WHERE lower(username)=lower(?)", (target_ref,)).fetchone()
         if target:
