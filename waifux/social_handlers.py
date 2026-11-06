@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -140,12 +142,17 @@ async def give_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not rows:
             await msg.reply_text("📭 No give history found.")
             return
-        await msg.reply_text(
-            "📜 GIVE COMMAND HISTORY\n" + "\n".join(
-                f"{i}. {r['actor_id']} → {r['target_id']} | Waifu {r['waifu_id']} | {r['created_at']}"
-                for i, r in enumerate(rows, 1)
-            )
-        )
+        with storage.connect() as con:
+            actor_profile = con.execute("SELECT first_name,username FROM user_profiles WHERE user_id=?", (replied_user.id,)).fetchone() if replied_user else None
+        actor_name = (actor_profile["first_name"] if actor_profile else None) or (f"@{actor_profile['username']}" if actor_profile and actor_profile["username"] else "Selected user")
+        lines = [f"📜 GIVE COMMAND HISTORY\nUser: {actor_name}\nShowing last {len(rows)} gift actions:"]
+        for i, row in enumerate(rows, 1):
+            with storage.connect() as con:
+                target_profile = con.execute("SELECT username,first_name FROM user_profiles WHERE user_id=?", (row["target_id"],)).fetchone()
+            receiver = f"@{target_profile['username']}" if target_profile and target_profile["username"] else (target_profile["first_name"] if target_profile and target_profile["first_name"] else f"User {row['target_id']}")
+            date_text = datetime.fromtimestamp(row["created_at"], ZoneInfo("Asia/Karachi")).strftime("%Y-%m-%d %H:%M")
+            lines.append(f"{i}) 🎁 Waifu ID: {row['waifu_id']}\n   → Given to: {receiver}\n   → Date: {date_text}")
+        await msg.reply_text("\n".join(lines))
         return
     if not context.args or not context.args[0].isdigit():
         await msg.reply_text("📦 GIVE WAIFU — USAGE GUIDE\nReply to a user: /give <waifu_id>\nUsing username or user ID: /give <waifu_id> @username_or_id")
@@ -169,6 +176,9 @@ async def give_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if target_id == uid and not _owner(uid):
         await msg.reply_text("🚫 Sudo/uploader apne aap ko waifu gift nahi kar sakte.")
+        return
+    if storage.owned_waifu(target_id, context.args[0]):
+        await msg.reply_text("⚠️ This user already owns this waifu. Duplicate gifting is not allowed.")
         return
     w = storage.get_waifu(context.args[0])
     if not w:
