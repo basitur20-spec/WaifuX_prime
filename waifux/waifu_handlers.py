@@ -113,7 +113,7 @@ def _random_waifu(rarities: list[str] | None = None, respect_spawn_settings: boo
                 setting.close()
         pool = storage.list_waifus(rarity, 500)
         with storage.connect() as con:
-            active_ids = {row["waifu_id"] for row in con.execute("SELECT waifu_id FROM auctions WHERE status='active'")}
+            active_ids = {row["waifu_id"] for row in con.execute("SELECT waifu_id FROM auctions")}
         if pool:
             available.extend((rarity, w) for w in pool if w["waifu_id"] not in active_ids)
     if not available:
