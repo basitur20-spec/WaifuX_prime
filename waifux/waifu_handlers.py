@@ -81,6 +81,9 @@ def _fmt(n: int) -> str:
 
 def _rarity_name(raw: str) -> str | None:
     key = re.sub(r"[^a-z]", "", raw.lower())
+    if raw.strip().isdigit():
+        index = int(raw.strip()) - 1
+        return RARITY_ORDER[index] if 0 <= index < len(RARITY_ORDER) else None
     return next((r for r in RARITIES if re.sub(r"[^a-z]", "", r.lower()) == key), None)
 
 
