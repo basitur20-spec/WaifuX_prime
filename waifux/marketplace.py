@@ -238,7 +238,12 @@ async def auction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             rows = con.execute(
                 """SELECT b.bidder_id,b.amount,b.created_at FROM auction_bids b
                 JOIN auctions a ON a.auction_id=b.auction_id
-                WHERE a.status='active' ORDER BY b.amount DESC,b.created_at ASC"""
+                JOIN (SELECT auction_id,bidder_id,MAX(amount) AS max_amount
+                      FROM auction_bids GROUP BY auction_id,bidder_id) latest
+                  ON latest.auction_id=b.auction_id AND latest.bidder_id=b.bidder_id
+                 AND latest.max_amount=b.amount
+                WHERE a.status='active'
+                ORDER BY b.amount DESC,b.created_at ASC"""
             ).fetchall()
         if not rows:
             await update.effective_message.reply_text("No active auction bids.")
@@ -337,6 +342,10 @@ async def bid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not auction:
             con.rollback()
             await update.effective_message.reply_text("AUCTION IS NOT AVAILABLE.")
+            return
+        if int(auction["seller_id"]) == uid:
+            con.rollback()
+            await update.effective_message.reply_text("You cannot bid on your own auction.")
             return
         current = max(int(auction["current_bid"]), int(auction["starting_bid"]))
         if amount <= current:
