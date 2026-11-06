@@ -14,6 +14,7 @@ from telegram.ext import (
 )
 
 from legacy import partial_commands as legacy
+from . import storage
 from . import waifu_handlers as waifu
 from . import marketplace
 from . import social_handlers as social
