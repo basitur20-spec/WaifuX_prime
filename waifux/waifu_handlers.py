@@ -772,9 +772,10 @@ async def dmode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
         token = storage.create_pending(uid, "dmode_choices", {"mode": mode, "values": values}, 600)
         label = "CHARACTER" if mode == "character" else "ANIME"
-        lines = [f"🎭 CHOOSE {label} TO FILTER BY:"]
-        lines.extend(f"{i+1}. {value}" for i, value in enumerate(values[:60]))
-        await q.edit_message_text("\n".join(lines), reply_markup=_dmode_choices_keyboard(uid, token, 0, values[:60]))
+        await q.edit_message_text(
+            f"🎭 CHOOSE {label} TO FILTER BY:",
+            reply_markup=_dmode_choices_keyboard(uid, token, 0, values)
+        )
         return
     if action == "dmrarity":
         page = int(parts[2])
@@ -788,10 +789,10 @@ async def dmode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await q.answer("Selection expired. Open /dmode again.", show_alert=True)
             return
         data = __import__("json").loads(pending["payload"])
-        values = data["values"][:60]
+        values = data["values"]
         await q.answer()
         await q.edit_message_text(
-            "\n".join([f"CHOOSE {data['mode'].upper()} TO FILTER BY:"] + [f"{i+1}. {value}" for i, value in enumerate(values)]),
+            f"CHOOSE {data['mode'].upper()} TO FILTER BY:",
             reply_markup=_dmode_choices_keyboard(uid, token, page, values)
         )
         return
