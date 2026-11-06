@@ -1,0 +1,397 @@
+"""Personal daily marketplace and timed auctions."""
+from __future__ import annotations
+
+import json
+import random
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
+from telegram.ext import ContextTypes
+
+from . import storage
+from .waifu_handlers import RARITIES, RARITY_ORDER, _display, _fmt, _owner, _sudo
+
+DISCOUNTS = {
+    "ChibiArc": (6, 11), "WinterArc": (5, 10), "RoyalArc": (6, 15),
+    "NeonArc": (4, 8), "CelestialArc": (6, 13), "MangaArc": (7, 17),
+}
+COMMON_POOL = ["RoyalArc", "NeonArc", "CelestialArc", "MangaArc"]
+RARE_POOL = ["ChibiArc", "WinterArc"]
+
+
+def day_key() -> str:
+    return datetime.now(ZoneInfo("Asia/Karachi")).date().isoformat()
+
+
+def _available(rarity: str):
+    with storage.connect() as con:
+        return con.execute(
+            """SELECT w.* FROM waifus w
+            WHERE w.rarity=? AND w.deleted_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM auctions a WHERE a.waifu_id=w.waifu_id AND a.status='active')
+            ORDER BY RANDOM() LIMIT 100""", (rarity,)
+        ).fetchall()
+
+
+def _choose_offer(exclude: set[str]):
+    group = random.choices(["common", "rare"], weights=[70, 30], k=1)[0]
+    rarities = COMMON_POOL if group == "common" else RARE_POOL
+    pool = []
+    for rarity in rarities:
+        pool.extend(w for w in _available(rarity) if w["waifu_id"] not in exclude)
+    if not pool:
+        for rarity in RARITY_ORDER:
+            pool.extend(w for w in _available(rarity) if w["waifu_id"] not in exclude)
+    return random.choice(pool) if pool else None
+
+
+def _ensure_offers(uid: int, refresh: bool = False):
+    day = day_key()
+    with storage.connect() as con:
+        existing = con.execute(
+            "SELECT * FROM marketplace_slots WHERE user_id=? AND day_key=? ORDER BY slot",
+            (uid, day)
+        ).fetchall()
+        if existing and not refresh:
+            return existing
+        if refresh:
+            refreshes = con.execute(
+                "SELECT refreshes FROM market_refreshes WHERE user_id=? AND day_key=?",
+                (uid, day)
+            ).fetchone()
+            if refreshes and refreshes["refreshes"] >= 2:
+                raise ValueError("Daily refresh limit reached (2/2).")
+            con.execute("INSERT OR IGNORE INTO user_balance(user_id) VALUES (?)", (uid,))
+            bal = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (uid,)).fetchone()["cash"]
+            if bal < 50_000:
+                raise ValueError("Refresh ke liye 50,000 Cash chahiye.")
+            con.execute("UPDATE user_balance SET cash=cash-50000 WHERE user_id=?", (uid,))
+            con.execute(
+                """INSERT INTO market_refreshes(user_id,day_key,refreshes) VALUES (?,?,1)
+                ON CONFLICT(user_id,day_key) DO UPDATE SET refreshes=refreshes+1""", (uid, day)
+            )
+        exclude = set()
+        if refresh:
+            con.execute("DELETE FROM marketplace_slots WHERE user_id=? AND day_key=?", (uid, day))
+        for slot in (0, 1):
+            w = _choose_offer(exclude)
+            if not w:
+                continue
+            exclude.add(w["waifu_id"])
+            low, high = DISCOUNTS.get(w["rarity"], (5, 10))
+            discount = random.randint(low, high)
+            con.execute(
+                """INSERT INTO marketplace_slots(user_id,slot,waifu_id,discount_percent,day_key,purchased)
+                VALUES (?,?,?,?,?,0)""",
+                (uid, slot, w["waifu_id"], discount, day)
+            )
+        return con.execute(
+            "SELECT * FROM marketplace_slots WHERE user_id=? AND day_key=? ORDER BY slot",
+            (uid, day)
+        ).fetchall()
+
+
+def _owned_count(uid: int, wid: str) -> int:
+    with storage.connect() as con:
+        return con.execute(
+            "SELECT COUNT(*) AS n FROM user_waifus WHERE user_id=? AND waifu_id=?",
+            (uid, wid)
+        ).fetchone()["n"]
+
+
+def _market_text(uid: int, slot: int, offer):
+    w = storage.get_waifu(offer["waifu_id"])
+    if not w:
+        return "Offer is no longer available."
+    original = int(w["price"])
+    sale = int(original * (100 - offer["discount_percent"]) / 100)
+    status = "❎ PURCHASED" if offer["purchased"] else "🛒 AVAILABLE"
+    return (
+        "╔══════════════════════╗\n"
+        "     🏪✨ DAILY MARKETPLACE ✨🏪\n"
+        "╚══════════════════════╝\n"
+        f"🎭 Name ➤ {w['name']}\n📺 Anime ➤ {w['anime']}\n"
+        f"🆔 Waifu ID ➤ {w['waifu_id']}\n💫 Rarity ➤ {RARITIES[w['rarity']][0]} {w['rarity']}\n"
+        f"💎 Original Price ➤ {_fmt(original)} Cash\n"
+        f"💸 Sale Price ➤ {_fmt(sale)} Cash\n"
+        f"📉 Discount ➤ {offer['discount_percent']}% OFF\n"
+        f"🟢 Status ➤ {status}\n🎴 Owned ➤ {_owned_count(uid, w['waifu_id'])}\n"
+        f"\n📦 Daily offer {slot + 1}/2"
+    )
+
+
+def _market_keyboard(uid: int, slot: int, offer):
+    bought = bool(offer["purchased"])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅", callback_data=f"mkt:{uid}:{1-slot}:view"),
+         InlineKeyboardButton("Buy" if not bought else "❎", callback_data=f"mkt:{uid}:{slot}:buy" if not bought else "mktnoop"),
+         InlineKeyboardButton("➡", callback_data=f"mkt:{uid}:{1-slot}:view")],
+        [InlineKeyboardButton("♛ Auction", callback_data=f"mkt:{uid}:{slot}:auction"),
+         InlineKeyboardButton("Refresh 50,000 Cash", callback_data=f"mkt:{uid}:{slot}:refresh")],
+        [InlineKeyboardButton("Close", callback_data=f"mkt:{uid}:{slot}:close")]
+    ])
+
+
+async def marketplace_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    try:
+        offers = _ensure_offers(uid)
+    except ValueError as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+    if not offers:
+        await update.effective_message.reply_text("Marketplace mein abhi offers available nahi.")
+        return
+    offer = offers[0]
+    w = storage.get_waifu(offer["waifu_id"])
+    await update.effective_message.reply_photo(
+        w["image_file_id"], caption=_market_text(uid, 0, offer),
+        reply_markup=_market_keyboard(uid, 0, offer)
+    )
+
+
+async def marketplace_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q.data == "mktnoop":
+        await q.answer("This offer has already been purchased.")
+        return
+    _, owner_raw, slot_raw, action = q.data.split(":")
+    uid, slot = int(owner_raw), int(slot_raw)
+    if q.from_user.id != uid:
+        await q.answer("This is another user's private marketplace.", show_alert=True)
+        return
+    day = day_key()
+    if action == "close":
+        await q.answer()
+        await q.message.delete()
+        return
+    if action == "refresh":
+        try:
+            offers = _ensure_offers(uid, refresh=True)
+        except ValueError as exc:
+            await q.answer(str(exc), show_alert=True)
+            return
+        slot = 0
+    elif action == "buy":
+        with storage.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            offer = con.execute(
+                "SELECT * FROM marketplace_slots WHERE user_id=? AND slot=? AND day_key=?",
+                (uid, slot, day)
+            ).fetchone()
+            if not offer or offer["purchased"]:
+                con.rollback()
+                await q.answer("Offer unavailable or already purchased.", show_alert=True)
+                return
+            w = con.execute("SELECT * FROM waifus WHERE waifu_id=? AND deleted_at IS NULL", (offer["waifu_id"],)).fetchone()
+            if not w:
+                con.rollback()
+                await q.answer("Waifu no longer available.", show_alert=True)
+                return
+            price = int(w["price"] * (100 - offer["discount_percent"]) / 100)
+            con.execute("INSERT OR IGNORE INTO user_balance(user_id) VALUES (?)", (uid,))
+            bal = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (uid,)).fetchone()["cash"]
+            if bal < price:
+                con.rollback()
+                await q.answer("Insufficient Cash. Earn more coins and try again.", show_alert=True)
+                return
+            con.execute("UPDATE user_balance SET cash=cash-? WHERE user_id=?", (price, uid))
+            con.execute("INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)", (uid, w["waifu_id"], storage.now(), "marketplace"))
+            con.execute("UPDATE marketplace_slots SET purchased=1 WHERE user_id=? AND slot=? AND day_key=?", (uid, slot, day))
+            con.execute("INSERT INTO transactions(tx_id,actor_id,action,amount,waifu_id,details,created_at) VALUES (?,?,?,?,?,?,?)",
+                        (__import__("uuid").uuid4().hex, uid, "marketplace_buy", price, w["waifu_id"], json.dumps({"discount": offer["discount_percent"]}), storage.now()))
+            con.commit()
+        await q.answer("Purchase successful!")
+        offers = _ensure_offers(uid)
+    elif action == "auction":
+        await q.answer()
+        await _show_auction(q, uid)
+        return
+    else:
+        offers = _ensure_offers(uid)
+    offer = next((o for o in offers if int(o["slot"]) == slot), None)
+    if not offer:
+        await q.answer("Offer not available.", show_alert=True)
+        return
+    w = storage.get_waifu(offer["waifu_id"])
+    await q.answer()
+    await q.edit_message_media(
+        media=InputMediaPhoto(media=w["image_file_id"], caption=_market_text(uid, slot, offer)),
+        reply_markup=_market_keyboard(uid, slot, offer)
+    )
+
+
+async def auction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    args = context.args
+    if not _sudo(uid):
+        return
+    if not args:
+        await update.effective_message.reply_text(
+            "AUCTION FORMAT\n/auction <waifu_id> <starting_bid> [hours]\n"
+            "Example: /auction 2342 1000000 24\n/auction users"
+        )
+        return
+    if args[0].lower() == "users":
+        with storage.connect() as con:
+            rows = con.execute(
+                """SELECT b.bidder_id,b.amount,b.created_at FROM auction_bids b
+                JOIN auctions a ON a.auction_id=b.auction_id
+                WHERE a.status='active' ORDER BY b.amount DESC,b.created_at ASC"""
+            ).fetchall()
+        if not rows:
+            await update.effective_message.reply_text("No active auction bids.")
+            return
+        lines = ["🔨 AUCTION BIDDERS (highest first)"]
+        for i, row in enumerate(rows, 1):
+            try:
+                user = await context.bot.get_chat(row["bidder_id"])
+                name = f"@{user.username}" if user.username else user.full_name
+            except Exception:
+                name = f"User {row['bidder_id']}"
+            lines.append(f"{i}. {name} | ID: {row['bidder_id']} | {_fmt(row['amount'])} Cash")
+        await update.effective_message.reply_text("\n".join(lines))
+        return
+    if len(args) < 2 or not args[0].isdigit() or not args[1].isdigit():
+        await update.effective_message.reply_text("Usage: /auction <waifu_id> <starting_bid> [hours]")
+        return
+    wid, amount = args[0], int(args[1])
+    try:
+        hours = int(args[2]) if len(args) > 2 else 24
+        if not 1 <= hours <= 168 or amount <= 0:
+            raise ValueError
+    except ValueError:
+        await update.effective_message.reply_text("Starting bid positive ho aur duration 1–168 hours.")
+        return
+    w = storage.get_waifu(wid)
+    if not w:
+        await update.effective_message.reply_text("THIS WAIFU IS NOT UPLOADED IN BOT DATABASE.")
+        return
+    try:
+        with storage.connect() as con:
+            con.execute(
+                "INSERT INTO auctions(waifu_id,seller_id,starting_bid,current_bid,ends_at,status,created_at) VALUES (?,?,?,?,?,'active',?)",
+                (wid, uid, amount, amount, storage.now() + hours * 3600, storage.now())
+            )
+    except Exception:
+        await update.effective_message.reply_text("This waifu is already listed in an auction.")
+        return
+    await update.effective_message.reply_photo(
+        w["image_file_id"],
+        caption=f"🔨 NEW AUCTION CREATED!\n{_display(w)}\n"
+                f"💎 Starting bid: {_fmt(amount)} Cash\n⌛ Duration: {hours} hours\n"
+                "🏪 View and bid using /marketplace"
+    )
+
+
+async def _show_auction(q, uid: int) -> None:
+    with storage.connect() as con:
+        auction = con.execute(
+            "SELECT * FROM auctions WHERE status='active' AND ends_at>? ORDER BY ends_at LIMIT 1",
+            (storage.now(),)
+        ).fetchone()
+    if not auction:
+        await q.message.reply_text("AUCTION IS NOT AVAILABLE.")
+        return
+    w = storage.get_waifu(auction["waifu_id"])
+    remaining = max(0, auction["ends_at"] - storage.now())
+    text = (
+        f"🔨 AUCTION\n{_display(w)}\n"
+        f"Starting bid: {_fmt(auction['starting_bid'])}\n"
+        f"Current bid: {_fmt(auction['current_bid'])}\n"
+        f"Bidders: {_bidder_count(auction['auction_id'])}\n"
+        f"Time left: {remaining//3600}h {(remaining%3600)//60}m"
+    )
+    await q.message.reply_photo(w["image_file_id"], caption=text,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Bid Amount", callback_data=f"aucbid:{uid}:{auction['auction_id']}"),
+                                            InlineKeyboardButton("Back", callback_data=f"mkt:{uid}:0:view")]]))
+
+
+def _bidder_count(auction_id: int) -> int:
+    with storage.connect() as con:
+        return con.execute("SELECT COUNT(DISTINCT bidder_id) AS n FROM auction_bids WHERE auction_id=?", (auction_id,)).fetchone()["n"]
+
+
+async def auction_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    _, uid, auction_id = q.data.split(":")
+    if q.from_user.id != int(uid):
+        await q.answer("This auction button belongs to another user.", show_alert=True)
+        return
+    context.user_data["active_auction_id"] = int(auction_id)
+    await q.answer()
+    await q.message.reply_text("Bid place karne ke liye isi chat mein /bid <amount> bhejo.")
+
+
+async def bid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    auction_id = context.user_data.get("active_auction_id")
+    if not auction_id or not context.args or not context.args[0].isdigit():
+        await update.effective_message.reply_text("Marketplace ke Auction button se open karo, phir /bid <amount> bhejo.")
+        return
+    amount = int(context.args[0])
+    with storage.connect() as con:
+        con.execute("BEGIN IMMEDIATE")
+        auction = con.execute("SELECT * FROM auctions WHERE auction_id=? AND status='active' AND ends_at>?", (auction_id, storage.now())).fetchone()
+        if not auction:
+            con.rollback()
+            await update.effective_message.reply_text("AUCTION IS NOT AVAILABLE.")
+            return
+        current = max(int(auction["current_bid"]), int(auction["starting_bid"]))
+        if amount <= current:
+            con.rollback()
+            await update.effective_message.reply_text(f"Bid current bid {_fmt(current)} se zyada honi chahiye.")
+            return
+        con.execute("INSERT OR IGNORE INTO user_balance(user_id) VALUES (?)", (uid,))
+        cash = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (uid,)).fetchone()["cash"]
+        if cash < amount:
+            con.rollback()
+            await update.effective_message.reply_text("❌ Insufficient balance for this bid.")
+            return
+        con.execute("UPDATE auctions SET current_bid=?,highest_bidder=? WHERE auction_id=?", (amount, uid, auction_id))
+        con.execute("INSERT INTO auction_bids(auction_id,bidder_id,amount,created_at) VALUES (?,?,?,?)", (auction_id, uid, amount, storage.now()))
+        con.commit()
+    await update.effective_message.reply_text(f"✅ Bid recorded: {_fmt(amount)} Cash. You are currently the highest bidder.")
+
+
+async def settle_auctions(context: ContextTypes.DEFAULT_TYPE) -> None:
+    due_ids = []
+    with storage.connect() as con:
+        due_ids = [r["auction_id"] for r in con.execute(
+            "SELECT auction_id FROM auctions WHERE status='active' AND ends_at<=?", (storage.now(),)
+        ).fetchall()]
+    for auction_id in due_ids:
+        winner = None
+        waifu = None
+        with storage.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            auction = con.execute("SELECT * FROM auctions WHERE auction_id=? AND status='active'", (auction_id,)).fetchone()
+            if not auction or auction["ends_at"] > storage.now():
+                con.rollback()
+                continue
+            bids = con.execute("SELECT bidder_id,amount FROM auction_bids WHERE auction_id=? ORDER BY amount DESC,created_at ASC", (auction_id,)).fetchall()
+            for bid in bids:
+                bal = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (bid["bidder_id"],)).fetchone()
+                if bal and bal["cash"] >= bid["amount"]:
+                    winner = bid
+                    break
+            waifu = con.execute("SELECT * FROM waifus WHERE waifu_id=? AND deleted_at IS NULL", (auction["waifu_id"],)).fetchone()
+            if winner and waifu:
+                con.execute("UPDATE user_balance SET cash=cash-? WHERE user_id=?", (winner["amount"], winner["bidder_id"]))
+                con.execute("INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)", (winner["bidder_id"], auction["waifu_id"], storage.now(), "auction"))
+                con.execute("INSERT INTO transactions(tx_id,actor_id,action,amount,waifu_id,created_at) VALUES (?,?,?,?,?,?)",
+                            (__import__("uuid").uuid4().hex, winner["bidder_id"], "auction_win", winner["amount"], auction["waifu_id"], storage.now()))
+                con.execute("UPDATE auctions SET status='completed' WHERE auction_id=?", (auction_id,))
+            else:
+                con.execute("UPDATE auctions SET status='expired' WHERE auction_id=?", (auction_id,))
+            con.commit()
+        if winner and waifu:
+            try:
+                await context.bot.send_photo(winner["bidder_id"], waifu["image_file_id"],
+                    caption=f"🎉 AUCTION WON!\n{_display(waifu)}\nPaid: {_fmt(winner['amount'])} Cash. Added to your /collection.")
+            except Exception:
+                pass
+        else:
+            # No valid funded bid remained at settlement time.
+            pass
