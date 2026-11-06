@@ -191,6 +191,10 @@ def init_db() -> None:
             created_by INTEGER NOT NULL,
             PRIMARY KEY(chat_id, keyword)
         );
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            migration_name TEXT PRIMARY KEY,
+            completed_at INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS audit_log (
             log_id INTEGER PRIMARY KEY AUTOINCREMENT,
             actor_id INTEGER NOT NULL,
@@ -444,3 +448,77 @@ def record_transaction(actor_id: int, action: str, amount: int = 0,
              json.dumps(details or {}, ensure_ascii=False), now()),
         )
     return txid
+
+ 
+
+def migrate_legacy_data() -> None:
+    """Import existing collection.db and users.json once; never overwrite balances."""
+    init_db()
+    with connect() as con:
+        done = con.execute(
+            "SELECT 1 FROM schema_migrations WHERE migration_name='legacy_collection_import'"
+        ).fetchone()
+        if done:
+            return
+        legacy_db = DATA_DIR / "collection.db"
+        if legacy_db.exists():
+            old = sqlite3.connect(legacy_db)
+            old.row_factory = sqlite3.Row
+            try:
+                table = old.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='collections'"
+                ).fetchone()
+                if table:
+                    for row in old.execute(
+                        "SELECT user_id,username,waifu_id,name,anime,rarity,image,favorite FROM collections"
+                    ):
+                        wid = str(row["waifu_id"])
+                        rarity = str(row["rarity"] or "Starter")
+                        price = 30000
+                        # Keep legacy catalogue data; assign a conservative valid base price.
+                        con.execute(
+                            """INSERT OR IGNORE INTO waifus
+                            (waifu_id,name,anime,rarity,price,image_file_id,uploader_id,aliases,created_at)
+                            VALUES (?,?,?,?,?,?,?,?,?)""",
+                            (wid, row["name"] or f"Waifu {wid}", row["anime"] or "Unknown",
+                             rarity, price, row["image"] or "", 0, "[]", now())
+                        )
+                        exists = con.execute(
+                            "SELECT 1 FROM user_waifus WHERE user_id=? AND waifu_id=? LIMIT 1",
+                            (int(row["user_id"]), wid)
+                        ).fetchone()
+                        if not exists and row["image"]:
+                            con.execute(
+                                "INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source,is_favorite) VALUES (?,?,?,?,?)",
+                                (int(row["user_id"]), wid, now(), "legacy_import", int(row["favorite"] or 0))
+                            )
+            finally:
+                old.close()
+        users_file = DATA_DIR / "users.json"
+        if users_file.exists():
+            try:
+                users = json.loads(users_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                users = {}
+            if isinstance(users, dict):
+                for uid, data in users.items():
+                    if not isinstance(data, dict):
+                        continue
+                    for wid in data.get("collection", []) if isinstance(data.get("collection", []), list) else []:
+                        wid = str(wid)
+                        exists = con.execute(
+                            "SELECT 1 FROM waifus WHERE waifu_id=? AND deleted_at IS NULL", (wid,)
+                        ).fetchone()
+                        owned = con.execute(
+                            "SELECT 1 FROM user_waifus WHERE user_id=? AND waifu_id=? LIMIT 1",
+                            (int(uid), wid)
+                        ).fetchone()
+                        if exists and not owned:
+                            con.execute(
+                                "INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)",
+                                (int(uid), wid, now(), "legacy_json_import")
+                            )
+        con.execute(
+            "INSERT INTO schema_migrations(migration_name,completed_at) VALUES ('legacy_collection_import',?)",
+            (now(),)
+        )
