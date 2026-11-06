@@ -95,18 +95,19 @@ def _display(w) -> str:
     )
 
 
-def _random_waifu(rarities: list[str] | None = None):
+def _random_waifu(rarities: list[str] | None = None, respect_spawn_settings: bool = False):
     available = []
     for rarity in (rarities or RARITY_ORDER):
-        setting = storage.raw_connect()
-        try:
-            row = setting.execute(
-                "SELECT spawn_enabled FROM rarity_settings WHERE rarity=?", (rarity,)
-            ).fetchone()
-            if row and not row["spawn_enabled"]:
-                continue
-        finally:
-            setting.close()
+        if respect_spawn_settings:
+            setting = storage.raw_connect()
+            try:
+                row = setting.execute(
+                    "SELECT spawn_enabled FROM rarity_settings WHERE rarity=?", (rarity,)
+                ).fetchone()
+                if row and not row["spawn_enabled"]:
+                    continue
+            finally:
+                setting.close()
         pool = storage.list_waifus(rarity, 500)
         with storage.connect() as con:
             active_ids = {row["waifu_id"] for row in con.execute("SELECT waifu_id FROM auctions WHERE status='active'")}
@@ -480,7 +481,7 @@ async def group_activity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         MESSAGE_COUNTS[chat_id] = count
         if count < 50 or storage.now() < settings["next_spawn_at"]:
             return
-        w = _random_waifu()
+        w = _random_waifu(respect_spawn_settings=True)
         if not w:
             return
         timestamp = storage.now()
