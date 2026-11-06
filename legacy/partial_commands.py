@@ -2613,7 +2613,7 @@ async def collection_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Favorite image first
     fav = next((x for x in data if x[5]==1), None)
 
-    if fav:
+    if fav and fav[4]:
         await update.message.reply_photo(fav[4])
 
     page_data, total_pages = paginate(data, page)
@@ -2691,7 +2691,8 @@ async def collection_image_view(update: Update, context: ContextTypes.DEFAULT_TY
     await q.message.reply_text(f"🖼️ YOUR WAIFUS | Page {page+1}/{total_pages}")
 
     for waifu in page_data:
-        await q.message.reply_photo(waifu[4])
+        if waifu[4]:
+            await q.message.reply_photo(waifu[4])
 
 
 # =========================================
@@ -2707,7 +2708,8 @@ async def inline_collection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = []
 
     for wid,name,anime,rarity,image,fav in data[:50]:
-
+        if not image:
+            continue
         results.append(
             InlineQueryResultPhoto(
                 id=str(wid),
