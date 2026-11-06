@@ -58,7 +58,7 @@ ID: 1234
 Aliases: alias one, alias two
 ```
 
-Name, rarity and anime are required. Price and ID may be omitted; the bot chooses a price within the configured rarity range and generates a free four-digit ID. Upload access is limited to Owner and Uploader roles. Set `WAIFU_CHANNEL_ID` if upload announcements should be posted to a channel.
+Name, rarity and anime are required. Price and ID may be omitted; the bot estimates price from Telegram photo resolution/file size within the rarity range and generates a free four-digit ID. Name/anime typos are corrected only when a close match exists in the current catalogue. Upload access is limited to Owner and Uploader roles. Set `WAIFU_CHANNEL_ID` if upload announcements should be posted to a channel.
 
 ## Architecture
 
@@ -80,4 +80,4 @@ Name, rarity and anime are required. Price and ID may be omitted; the bot choose
 
 GitHub Actions runs Python compilation and pytest. Passing CI verifies syntax and the offline storage/migration tests; it does **not** replace a live Telegram test. Before production deployment, test the bot in a private group with disposable users and a backup database.
 
-The current upload flow validates fields and chooses a price within the rarity band; it does not perform AI spelling correction or image-quality analysis. Anti-spam muting requires the bot to have administrator permission to restrict members. Each user receives a stable 11-digit bot ID; Telegram IDs remain internal. Profile, collection and privileged-gift lookup accept the bot ID or a known username. Review `docs/KNOWN_ISSUES.md` before merging.
+Upload correction is catalogue-based fuzzy matching (not general AI spell-check). Price uses a resolution/file-size quality heuristic (not visual AI analysis). Anti-spam muting requires the bot to have administrator permission to restrict members. Each user receives a stable 11-digit bot ID; Telegram IDs remain internal. Profile, collection and privileged-gift lookup accept the bot ID or a known username. Review `docs/KNOWN_ISSUES.md` before merging.
