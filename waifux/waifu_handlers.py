@@ -617,11 +617,16 @@ async def changetime_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def marriage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
-    left = storage.cooldown_left(uid, "marriage")
-    if left:
-        await update.effective_message.reply_text(f"⏳ Try again in {left//60}m {left%60}s.")
-        return
-    storage.set_cooldown(uid, "marriage", 3600)
+    with storage.connect() as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT expires_at FROM cooldowns WHERE user_id=? AND action='marriage'", (uid,)).fetchone()
+        left = max(0, int(row["expires_at"]) - storage.now()) if row else 0
+        if left:
+            con.rollback()
+            await update.effective_message.reply_text(f"⏳ Try again in {left//60}m {left%60}s.")
+            return
+        con.execute("INSERT INTO cooldowns(user_id,action,expires_at) VALUES (?,?,?) ON CONFLICT(user_id,action) DO UPDATE SET expires_at=excluded.expires_at", (uid, "marriage", storage.now()+3600))
+        con.commit()
     if random.random() >= 0.35:
         await update.effective_message.reply_text(f"{update.effective_user.first_name}, your marriage proposal was rejected and she ran away! 🤡")
         return
@@ -635,16 +640,24 @@ async def marriage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def propose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
-    left = storage.cooldown_left(uid, "propose")
-    if left:
-        await update.effective_message.reply_text(f"⏳ Cooldown: {left//60}m {left%60}s.")
-        return
-    cash, _ = storage.get_balance(uid)
-    if cash < 30_000:
-        await update.effective_message.reply_text("YOU NEED 30,000 CASH💸 TO PROPOSE.")
-        return
-    storage.change_balance(uid, cash_delta=-30_000)
-    storage.set_cooldown(uid, "propose", 300)
+    with storage.connect() as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT expires_at FROM cooldowns WHERE user_id=? AND action='propose'", (uid,)).fetchone()
+        left = max(0, int(row["expires_at"]) - storage.now()) if row else 0
+        if left:
+            con.rollback()
+            await update.effective_message.reply_text(f"⏳ Cooldown: {left//60}m {left%60}s.")
+            return
+        con.execute("INSERT OR IGNORE INTO user_balance(user_id) VALUES (?)", (uid,))
+        cash = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (uid,)).fetchone()["cash"]
+        if cash < 30_000:
+            con.rollback()
+            await update.effective_message.reply_text("YOU NEED 30,000 CASH💸 TO PROPOSE.")
+            return
+        con.execute("UPDATE user_balance SET cash=cash-30000 WHERE user_id=?", (uid,))
+        con.execute("INSERT INTO cooldowns(user_id,action,expires_at) VALUES (?,?,?) ON CONFLICT(user_id,action) DO UPDATE SET expires_at=excluded.expires_at", (uid, "propose", storage.now()+300))
+        con.execute("INSERT INTO transactions(tx_id,actor_id,action,amount,created_at) VALUES (?,?,?,?,?)", (__import__("uuid").uuid4().hex, uid, "propose_fee", 30000, storage.now()))
+        con.commit()
     try:
         await context.bot.copy_message(
             chat_id=update.effective_chat.id,
