@@ -241,7 +241,10 @@ async def collection_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         favourites = [w for w in storage.collection(uid) if w["is_favorite"]]
         if favourites:
             fav = favourites[0]
-            await update.effective_message.reply_photo(fav["image_file_id"], caption=f"❤️ Your favourite waifu\n{_display(fav)}")
+            if fav["image_file_id"]:
+                await update.effective_message.reply_photo(fav["image_file_id"], caption=f"❤️ Your favourite waifu\n{_display(fav)}")
+            else:
+                await update.effective_message.reply_text(f"❤️ Your favourite waifu\n{_display(fav)}")
     await _send_collection(update.effective_message, owner_id, 0, rows, viewer_id=uid)
 
 
@@ -375,11 +378,17 @@ async def fav_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         InlineKeyboardButton("COLLECTION", callback_data=f"favconfirm:{token}"),
         InlineKeyboardButton("CANCEL", callback_data=f"favcancel:{token}")
     ]])
-    await update.effective_message.reply_photo(
-        w["image_file_id"],
-        caption=f"Do you really want to set {w['name']} as your favourite waifu?",
-        reply_markup=keyboard
-    )
+    if w["image_file_id"]:
+        await update.effective_message.reply_photo(
+            w["image_file_id"],
+            caption=f"Do you really want to set {w['name']} as your favourite waifu?",
+            reply_markup=keyboard
+        )
+    else:
+        await update.effective_message.reply_text(
+            f"Do you really want to set {w['name']} as your favourite waifu?",
+            reply_markup=keyboard
+        )
 
 
 async def waifu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -881,10 +890,15 @@ async def find_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.effective_message.reply_text("❌ NO CHARACTER FOUND WITH THIS 🆔.")
         return
     caption, pages = _find_caption(w, 0)
-    await update.effective_message.reply_photo(
-        w["image_file_id"], caption=caption,
-        reply_markup=_find_keyboard(update.effective_user.id, wid, 0, pages)
-    )
+    if w["image_file_id"]:
+        await update.effective_message.reply_photo(
+            w["image_file_id"], caption=caption,
+            reply_markup=_find_keyboard(update.effective_user.id, wid, 0, pages)
+        )
+    else:
+        await update.effective_message.reply_text(
+            caption, reply_markup=_find_keyboard(update.effective_user.id, wid, 0, pages)
+        )
 
 
 async def find_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -992,10 +1006,11 @@ async def f_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     with storage.connect() as con:
         picked = con.execute("SELECT COUNT(*) AS n FROM user_waifus WHERE waifu_id=?", (w["waifu_id"],)).fetchone()["n"]
-    await update.effective_message.reply_photo(
-        w["image_file_id"],
-        caption=f"🌐 CHARACTER INFO\n{_display(w)}\n🌍 GLOBALLY PICKED: {picked} times..."
-    )
+    caption = f"🌐 CHARACTER INFO\n{_display(w)}\n🌍 GLOBALLY PICKED: {picked} times..."
+    if w["image_file_id"]:
+        await update.effective_message.reply_photo(w["image_file_id"], caption=caption)
+    else:
+        await update.effective_message.reply_text(caption)
 
 
 async def gift_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
