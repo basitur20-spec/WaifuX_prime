@@ -310,7 +310,7 @@ async def auction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                  AND latest.max_amount=b.amount
                 LEFT JOIN user_profiles up ON up.user_id=b.bidder_id
                 WHERE a.status='active'
-                ORDER BY b.amount DESC,b.created_at ASC"""
+                ORDER BY b.amount DESC,b.created_at ASC LIMIT 10"""
             ).fetchall()
         if not rows:
             await update.effective_message.reply_text("No active auction bids.")
