@@ -400,7 +400,8 @@ async def hunt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         names = [w["name"], *(__import__("json").loads(w["aliases"] or "[]"))]
         words = {part.casefold() for name in names for part in re.findall(r"[\w]+", name)}
-        if supplied not in words and supplied != w["name"].casefold():
+        supplied_words = set(re.findall(r"[\w]+", supplied))
+        if not (supplied_words & words) and supplied != w["name"].casefold():
             await msg.reply_text("❌ NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEXT SPAWN.")
             return
         storage.add_to_collection(msg.from_user.id, w["waifu_id"], "hunt")
@@ -437,7 +438,7 @@ async def group_activity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             pass
         q.clear()
         return
-    con = storage.connect()
+    con = storage.raw_connect()
     try:
         active = con.execute("SELECT 1 FROM active_spawns WHERE chat_id=? AND expires_at>?", (chat_id, storage.now())).fetchone()
         if active:
