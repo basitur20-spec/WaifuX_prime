@@ -969,11 +969,11 @@ async def sell_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if any(not storage.owned_waifu(uid, wid) for wid in args):
         await update.effective_message.reply_text("❌ In IDs mein se koi waifu tumhari collection mein nahi.")
         return
-    day_key = datetime.now(ZoneInfo("Asia/Karachi")).date().isoformat()
+    day_start = int(datetime.now(ZoneInfo("Asia/Karachi")).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
     with storage.connect() as con:
         sold_today = con.execute(
-            "SELECT COUNT(*) AS n FROM transactions WHERE actor_id=? AND action='sell_waifu' AND date(created_at,'unixepoch','localtime')=?",
-            (uid, day_key)
+            "SELECT COUNT(*) AS n FROM transactions WHERE actor_id=? AND action='sell_waifu' AND created_at>=?",
+            (uid, day_start)
         ).fetchone()["n"]
     if sold_today + len(args) > 5:
         await update.effective_message.reply_text("Daily limit: maximum 5 waifus sell kar sakte ho.")
