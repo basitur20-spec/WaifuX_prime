@@ -1023,20 +1023,30 @@ async def sell_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         else:
             ids = data["ids"]
             cash_added = 0
+            sale_logs = []
             for wid in ids:
-                w = con.execute("SELECT price FROM waifus WHERE waifu_id=? AND deleted_at IS NULL", (wid,)).fetchone()
+                w = con.execute("SELECT price,rarity FROM waifus WHERE waifu_id=? AND deleted_at IS NULL", (wid,)).fetchone()
                 owned = con.execute("SELECT id FROM user_waifus WHERE user_id=? AND waifu_id=? ORDER BY obtained_at LIMIT 1", (q.from_user.id, wid)).fetchone()
                 if not w or not owned:
                     con.rollback()
                     await q.answer("Collection changed; sale cancelled.", show_alert=True)
                     return
+                rate = con.execute("SELECT sell_percent FROM rarity_settings WHERE rarity=?", (w["rarity"],)).fetchone()
+                percent = float(rate["sell_percent"]) if rate else 50.0
+                payout = int(w["price"] * percent / 100)
                 con.execute("DELETE FROM user_waifus WHERE id=?", (owned["id"],))
-                cash_added += int(w["price"] * 0.5)
+                cash_added += payout
+                sale_logs.append((wid, payout))
             con.execute("INSERT OR IGNORE INTO user_balance(user_id) VALUES (?)", (q.from_user.id,))
             con.execute("UPDATE user_balance SET cash=cash+? WHERE user_id=?", (cash_added, q.from_user.id))
         con.execute("UPDATE pending_actions SET status='done' WHERE token=?", (token,))
-        con.execute("INSERT INTO transactions(tx_id,actor_id,action,amount,details,created_at) VALUES (?,?,?,?,?,?)",
-                    (__import__("uuid").uuid4().hex, q.from_user.id, "sell_waifu" if pending["action"]=="sell_waifus" else "sell_diamonds", cash_added, json.dumps(data), storage.now()))
+        if pending["action"] == "sell_waifus":
+            for wid, payout in sale_logs:
+                con.execute("INSERT INTO transactions(tx_id,actor_id,action,amount,waifu_id,details,created_at) VALUES (?,?,?,?,?,?,?)",
+                            (__import__("uuid").uuid4().hex, q.from_user.id, "sell_waifu", payout, wid, json.dumps(data), storage.now()))
+        else:
+            con.execute("INSERT INTO transactions(tx_id,actor_id,action,amount,details,created_at) VALUES (?,?,?,?,?,?)",
+                        (__import__("uuid").uuid4().hex, q.from_user.id, "sell_diamonds", cash_added, json.dumps(data), storage.now()))
         con.commit()
     storage.set_cooldown(q.from_user.id, "sell", 60)
     await q.answer("Sale completed.")
