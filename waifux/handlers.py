@@ -119,6 +119,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
         "uploadercommands": legacy.uploader_commands,
         "upload": waifu.upload_cmd,
         "collection": waifu.collection_cmd,
+        "dmode": waifu.dmode_cmd,
         "fav": waifu.fav_cmd,
         "waifu": waifu.waifu_cmd,
         "hunt": waifu.hunt_cmd,
@@ -171,6 +172,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
         app.add_handler(CallbackQueryHandler(callback, pattern=pattern))
 
     app.add_handler(CallbackQueryHandler(waifu.collection_callback, pattern=r"^(?:col|colimg|colclose):"))
+    app.add_handler(CallbackQueryHandler(waifu.dmode_callback, pattern=r"^dmode:"))
     app.add_handler(CallbackQueryHandler(waifu.waifu_callback, pattern=r"^fav(?:inline|confirm|cancel):"))
     app.add_handler(CallbackQueryHandler(waifu.gift_callback, pattern=r"^gift(?:ok|no):"))
     app.add_handler(CallbackQueryHandler(waifu.sell_callback, pattern=r"^sell(?:ok|no):"))
