@@ -1098,8 +1098,11 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     gifted = storage.get_waifu(data["waifu_id"])
     if gifted:
         try:
-            await context.bot.send_photo(data["receiver_id"], gifted["image_file_id"],
-                caption=f"🎁 YOU RECEIVED A WAIFU!\n{_display(gifted)}\nAdded to your /collection.")
+            if gifted["image_file_id"]:
+                await context.bot.send_photo(data["receiver_id"], gifted["image_file_id"],
+                    caption=f"🎁 YOU RECEIVED A WAIFU!\n{_display(gifted)}\nAdded to your /collection.")
+            else:
+                await context.bot.send_message(data["receiver_id"], f"🎁 YOU RECEIVED A WAIFU!\n{_display(gifted)}\nAdded to your /collection.")
         except Exception:
             pass
 
