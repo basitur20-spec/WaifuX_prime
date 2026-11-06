@@ -756,22 +756,26 @@ def _request_waifu_api_images(limit: int = 3) -> list[str]:
     return urls
 
 
+_PROPOSAL_INTRO_LOCK = asyncio.Lock()
+
+
 async def _proposal_intro_image() -> str | None:
     """Use one persistent intro image for every user and every bot restart."""
     cache_path = storage.DATA_DIR / "propose_intro_image_url.txt"
-    try:
-        if cache_path.exists():
-            cached = cache_path.read_text(encoding="utf-8").strip()
-            if cached.startswith("https://"):
-                return cached
-        urls = await asyncio.to_thread(_request_waifu_api_images, 1)
-        if not urls:
+    async with _PROPOSAL_INTRO_LOCK:
+        try:
+            if cache_path.exists():
+                cached = cache_path.read_text(encoding="utf-8").strip()
+                if cached.startswith("https://"):
+                    return cached
+            urls = await asyncio.to_thread(_request_waifu_api_images, 1)
+            if not urls:
+                return None
+            storage.DATA_DIR.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(urls[0], encoding="utf-8")
+            return urls[0]
+        except Exception:
             return None
-        storage.DATA_DIR.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(urls[0], encoding="utf-8")
-        return urls[0]
-    except Exception:
-        return None
 
 
 async def _proposal_gallery_images(intro_url: str | None) -> list[str]:
