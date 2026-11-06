@@ -5,11 +5,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from telegram.ext import Application, CommandHandler
+from waifux import storage
 from waifux.handlers import register_handlers
 
 
 def test_runtime_modules_import_and_register_core_commands(tmp_path, monkeypatch):
-    monkeypatch.setenv("WAIFUX_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(storage, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(storage, "DB_PATH", tmp_path / "balance_system.db")
     app = Application.builder().token("123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi").build()
     register_handlers(app, 8163432539)
     commands = set()
