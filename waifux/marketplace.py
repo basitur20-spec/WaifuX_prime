@@ -413,7 +413,7 @@ async def bid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         current = max(int(auction["current_bid"]), int(auction["starting_bid"]))
         if amount <= current:
-            await update.effective_message.reply_text(f"Bid current bid {_fmt(current)} se zyada honi chahiye.")
+            await update.effective_message.reply_text(f"Your bid must be higher than the current bid of {_fmt(current)}.")
             return
         cash, _ = storage.get_balance(uid)
         if cash < amount:
