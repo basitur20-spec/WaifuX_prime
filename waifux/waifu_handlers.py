@@ -432,7 +432,7 @@ def _fav_list_keyboard(uid: int, rows, page: int):
     for w in unique[page*10:(page+1)*10]:
         icon = RARITIES.get(w["rarity"], ("✨",))[0]
         buttons.append([InlineKeyboardButton(
-            f"{icon} {w['name']} | {w['waifu_id']}",
+            f"{icon} {w['name']} | {w['waifu_id']}"[:60],
             callback_data=f"favpick:{uid}:{w['waifu_id']}"
         )])
     nav = []
