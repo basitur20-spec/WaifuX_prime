@@ -1248,7 +1248,7 @@ async def gift_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await msg.reply_text("⚠️ Receiver already owns this waifu. Duplicate gifting is not allowed.")
         return
     token = storage.create_pending(giver, "gift", {"receiver_id": receiver.id, "waifu_id": w["waifu_id"], "receiver_name": receiver.full_name}, 60)
-    caption = f"🎁 GIFT CONFIRMATION\n\n{_display(w)}\n\nReceiver: {receiver.full_name}\nThis request will expire in 1 minute.\nGift confirm karna hai?"
+    caption = f"🎁 GIFT CONFIRMATION\n\n{_display(w)}\n\nReceiver: {receiver.full_name}\nThis request will expire in 1 minute.\nDo you want to confirm this gift?"
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Confirm", callback_data=f"giftok:{token}"),
         InlineKeyboardButton("❌ Cancel", callback_data=f"giftno:{token}")
@@ -1470,7 +1470,7 @@ async def setprofile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             con.execute("INSERT INTO user_profiles(user_id,profile_photo,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET profile_photo=excluded.profile_photo,updated_at=excluded.updated_at", (uid, file_id, storage.now()))
         await msg.reply_text("💖 Profile photo updated.")
         return
-    await msg.reply_text("Usage: /setprofile <owned_waifu_id> ya kisi photo ko reply karke /setprofile.")
+    await msg.reply_text("Usage: /setprofile <owned_waifu_id>, or reply to a photo with /setprofile.")
 
 
 async def dupload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
