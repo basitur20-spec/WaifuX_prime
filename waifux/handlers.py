@@ -229,6 +229,13 @@ def register_handlers(app: Application, owner_id: int) -> None:
     for name, callback in command_map.items():
         app.add_handler(CommandHandler(name, callback))
 
+    async def unknown_command(update, context):
+        await update.effective_message.reply_text(
+            "This command is not available yet. Use /help to see available commands."
+        )
+
+    app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+
     # Specific callback patterns prevent the old catch-all handler from
     # swallowing collection image callbacks or unrelated inline buttons.
     callback_map = [
