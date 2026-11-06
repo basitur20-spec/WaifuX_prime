@@ -660,97 +660,179 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.effective_message.reply_text(text)
 
 
+def _dmode_main_keyboard(uid: int):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("DEFAULT", callback_data=f"dmode:{uid}:default"),
+         InlineKeyboardButton("CHARACTERS", callback_data=f"dmode:{uid}:character")],
+        [InlineKeyboardButton("RARITY", callback_data=f"dmode:{uid}:rarity"),
+         InlineKeyboardButton("ANIME", callback_data=f"dmode:{uid}:anime")],
+        [InlineKeyboardButton("❌ Close", callback_data=f"dmclose:{uid}")]
+    ])
+
+
+def _dmode_rarity_keyboard(uid: int, page: int):
+    page_size = 12
+    pages = (len(RARITY_ORDER) + page_size - 1) // page_size
+    values = RARITY_ORDER[page * page_size:(page + 1) * page_size]
+    rows = []
+    for index in range(0, len(values), 4):
+        rows.append([
+            InlineKeyboardButton(
+                f"{RARITIES[name][0]} {name}",
+                callback_data=f"dmset:{uid}:rarity:{name}"
+            ) for name in values[index:index+4]
+        ])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅ Back Page", callback_data=f"dmrarity:{uid}:{page-1}"))
+    nav.append(InlineKeyboardButton(f"📑 {page+1}/{pages}", callback_data="dmnoop"))
+    if page + 1 < pages:
+        nav.append(InlineKeyboardButton("Next Page ➡", callback_data=f"dmrarity:{uid}:{page+1}"))
+    rows.append(nav)
+    rows.append([InlineKeyboardButton("Back", callback_data=f"dmback:{uid}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _dmode_choices_keyboard(uid: int, token: str, page: int, count: int):
+    pages = max(1, (count + 11) // 12)
+    rows = []
+    start = page * 12
+    for index in range(start, min(start + 12, count), 2):
+        row = [InlineKeyboardButton(
+            str(index + 1),
+            callback_data=f"dmpick:{uid}:{token}:{index}"
+        )]
+        if index + 1 < min(start + 12, count):
+            row.append(InlineKeyboardButton(
+                str(index + 2),
+                callback_data=f"dmpick:{uid}:{token}:{index+1}"
+            ))
+        rows.append(row)
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅ Back Page", callback_data=f"dmchoices:{uid}:{token}:{page-1}"))
+    nav.append(InlineKeyboardButton(f"📑 {page+1}/{pages}", callback_data="dmnoop"))
+    if page + 1 < pages:
+        nav.append(InlineKeyboardButton("Next Page ➡", callback_data=f"dmchoices:{uid}:{token}:{page+1}"))
+    rows.append(nav)
+    rows.append([InlineKeyboardButton("Back", callback_data=f"dmback:{uid}")])
+    return InlineKeyboardMarkup(rows)
+
+
 async def dmode_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
-    args = context.args
-    if not args:
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Default", callback_data=f"dmode:{uid}:default"),
-             InlineKeyboardButton("By Character", callback_data=f"dmode:{uid}:character")],
-            [InlineKeyboardButton("By Rarity", callback_data=f"dmode:{uid}:rarity"),
-             InlineKeyboardButton("By Anime", callback_data=f"dmode:{uid}:anime")]
-        ])
-        await update.effective_message.reply_text("🎨 Choose your collection display mode.", reply_markup=keyboard)
-        return
-    mode = args[0].lower()
-    value = " ".join(args[1:]).strip()
-    if mode == "default":
-        value = ""
-    elif mode == "rarity":
-        rarity = _rarity_name(value)
-        if not rarity:
-            await update.effective_message.reply_text("Usage: /dmode rarity WinterArc")
-            return
-        value = rarity
-    elif mode not in {"anime", "character"} or not value:
-        await update.effective_message.reply_text("Use /dmode default, /dmode rarity <name>, /dmode anime <name>, or /dmode character <name>.")
-        return
     with storage.connect() as con:
-        con.execute(
-            """INSERT INTO user_profiles(user_id,display_mode,display_value,updated_at) VALUES (?,?,?,?)
-            ON CONFLICT(user_id) DO UPDATE SET display_mode=excluded.display_mode,
-            display_value=excluded.display_value,updated_at=excluded.updated_at""",
-            (uid, mode, value or None, storage.now())
-        )
-    await update.effective_message.reply_text(f"✅ Collection mode set to {mode}: {value or 'all waifus'}.")
+        profile = con.execute("SELECT display_mode,display_value FROM user_profiles WHERE user_id=?", (uid,)).fetchone()
+    current = f"{profile['display_mode']}: {profile['display_value']}" if profile else "default"
+    await update.effective_message.reply_text(
+        f"🎨 SET YOUR WAIFU'S MODE\nCurrent mode: {current}\nChoose a sorting/filter mode:",
+        reply_markup=_dmode_main_keyboard(uid)
+    )
 
 
 async def dmode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
-    _, uid_raw, mode = q.data.split(":")
-    uid = int(uid_raw)
+    parts = q.data.split(":")
+    action = parts[0]
+    if q.data == "dmnoop":
+        await q.answer()
+        return
+    uid = int(parts[1])
     if q.from_user.id != uid:
         await q.answer("These settings belong to another user.", show_alert=True)
         return
-    await q.answer()
-    if mode == "default":
+    if action == "dmclose":
+        await q.answer()
+        await q.message.delete()
+        return
+    if action == "dmback":
+        await q.answer()
+        await q.edit_message_text("🎨 SET YOUR WAIFU'S MODE", reply_markup=_dmode_main_keyboard(uid))
+        return
+    if action == "dmode":
+        mode = parts[2]
+        await q.answer()
+        if mode == "default":
+            with storage.connect() as con:
+                con.execute(
+                    "INSERT INTO user_profiles(user_id,display_mode,display_value,updated_at) VALUES (?,?,NULL,?) ON CONFLICT(user_id) DO UPDATE SET display_mode='default',display_value=NULL,updated_at=excluded.updated_at",
+                    (uid, "default", storage.now())
+                )
+            await q.edit_message_text("✅ Default collection mode restored. Use /collection.")
+            return
+        if mode == "rarity":
+            await q.edit_message_text("💫 CHOOSE A RARITY TO FILTER YOUR COLLECTION:", reply_markup=_dmode_rarity_keyboard(uid, 0))
+            return
+        rows = storage.collection(uid)
+        field = "name" if mode == "character" else "anime"
+        values = list(dict.fromkeys(str(row[field]) for row in rows))
+        if not values:
+            await q.answer("Your collection is empty.", show_alert=True)
+            return
+        token = storage.create_pending(uid, "dmode_choices", {"mode": mode, "values": values}, 600)
+        label = "CHARACTER" if mode == "character" else "ANIME"
+        lines = [f"🎭 CHOOSE {label} TO FILTER BY:"]
+        lines.extend(f"{i+1}. {value}" for i, value in enumerate(values[:60]))
+        await q.edit_message_text("\n".join(lines), reply_markup=_dmode_choices_keyboard(uid, token, 0, min(len(values),60)))
+        return
+    if action == "dmrarity":
+        page = int(parts[2])
+        await q.answer()
+        await q.edit_message_text("💫 CHOOSE A RARITY TO FILTER YOUR COLLECTION:", reply_markup=_dmode_rarity_keyboard(uid, page))
+        return
+    if action == "dmchoices":
+        token, page = parts[2], int(parts[3])
+        pending = storage.get_pending(token, uid, "dmode_choices")
+        if not pending:
+            await q.answer("Selection expired. Open /dmode again.", show_alert=True)
+            return
+        data = __import__("json").loads(pending["payload"])
+        values = data["values"][:60]
+        await q.answer()
+        await q.edit_message_text(
+            "\n".join([f"CHOOSE {data['mode'].upper()} TO FILTER BY:"] + [f"{i+1}. {value}" for i, value in enumerate(values)]),
+            reply_markup=_dmode_choices_keyboard(uid, token, page, len(values))
+        )
+        return
+    if action == "dmset":
+        mode, value = parts[2], ":".join(parts[3:])
+        if not storage.collection(uid, rarity=value if mode == "rarity" else None,
+                                  anime=value if mode == "anime" else None,
+                                  name=value if mode == "character" else None):
+            await q.answer("You don't own any waifu matching this selection.", show_alert=True)
+            return
         with storage.connect() as con:
             con.execute(
-                "INSERT INTO user_profiles(user_id,display_mode,display_value,updated_at) VALUES (?,?,NULL,?) ON CONFLICT(user_id) DO UPDATE SET display_mode='default',display_value=NULL,updated_at=excluded.updated_at",
-                (uid, "default", storage.now())
+                """INSERT INTO user_profiles(user_id,display_mode,display_value,updated_at) VALUES (?,?,?,?)
+                ON CONFLICT(user_id) DO UPDATE SET display_mode=excluded.display_mode,
+                display_value=excluded.display_value,updated_at=excluded.updated_at""",
+                (uid, mode, value, storage.now())
             )
-        await q.edit_message_text("✅ Default collection mode restored.")
-    else:
-        await q.edit_message_text(f"Selected {mode} mode. Now use /dmode {mode} <name>.")
-
-
-def _find_users_page(waifu_id: str, page: int):
-    with storage.connect() as con:
-        total = con.execute("SELECT COUNT(*) AS n FROM user_waifus WHERE waifu_id=?", (waifu_id,)).fetchone()["n"]
-        rows = con.execute(
-            """SELECT uw.user_id,COUNT(*) AS copies,MIN(uw.obtained_at) AS first_obtained,
-            up.username,up.first_name,up.bot_user_id
-            FROM user_waifus uw LEFT JOIN user_profiles up ON up.user_id=uw.user_id
-            WHERE uw.waifu_id=? GROUP BY uw.user_id
-            ORDER BY first_obtained ASC LIMIT 10 OFFSET ?""",
-            (waifu_id, page * 10)
-        ).fetchall()
-        total_users = con.execute("SELECT COUNT(DISTINCT user_id) AS n FROM user_waifus WHERE waifu_id=?", (waifu_id,)).fetchone()["n"]
-    return int(total), rows, int(total_users)
-
-
-def _find_caption(w, page: int):
-    total, rows, total_users = _find_users_page(w["waifu_id"], page)
-    lines = [f"🌐 CHARACTER INFO\n{_display(w)}\n🌍 GLOBALLY PICKED: {total} times\n",
-             f"👥 USERS WHO HAVE THIS WAIFU ({total_users} total):"]
-    for index, row in enumerate(rows, page * 10 + 1):
-        public_id = row["bot_user_id"] or storage.ensure_bot_user_id(row["user_id"])
-        name = f"@{row['username']}" if row["username"] else (row["first_name"] or f"User {public_id}")
-        lines.append(f"{index}. {name} x{row['copies']}")
-    return "\n".join(lines), max(1, (total_users + 9) // 10)
-
-
-def _find_keyboard(requester: int, wid: str, page: int, total_pages: int):
-    buttons = []
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("⬅ Back Page", callback_data=f"find:{requester}:{wid}:{page-1}"))
-    nav.append(InlineKeyboardButton(f"📑 {page+1}/{total_pages}", callback_data="findnoop"))
-    if page + 1 < total_pages:
-        nav.append(InlineKeyboardButton("Next ➡", callback_data=f"find:{requester}:{wid}:{page+1}"))
-    buttons.append(nav)
-    buttons.append([InlineKeyboardButton("🗑 Discard", callback_data=f"finddel:{requester}")])
-    return InlineKeyboardMarkup(buttons)
+        await q.answer("Collection mode updated.")
+        await q.edit_message_text(f"✅ Collection mode set to {mode}: {value}. Use /collection to view.")
+        return
+    if action == "dmpick":
+        token, index = parts[2], int(parts[3])
+        pending = storage.get_pending(token, uid, "dmode_choices")
+        if not pending:
+            await q.answer("Selection expired. Open /dmode again.", show_alert=True)
+            return
+        data = __import__("json").loads(pending["payload"])
+        values = data["values"]
+        if not 0 <= index < len(values):
+            await q.answer("Invalid selection.", show_alert=True)
+            return
+        value, mode = values[index], data["mode"]
+        with storage.connect() as con:
+            con.execute(
+                """INSERT INTO user_profiles(user_id,display_mode,display_value,updated_at) VALUES (?,?,?,?)
+                ON CONFLICT(user_id) DO UPDATE SET display_mode=excluded.display_mode,
+                display_value=excluded.display_value,updated_at=excluded.updated_at""",
+                (uid, mode, value, storage.now())
+            )
+        storage.finish_pending(token)
+        await q.answer("Collection mode updated.")
+        await q.edit_message_text(f"✅ Collection mode set to {mode}: {value}. Use /collection to view.")
 
 
 async def find_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
