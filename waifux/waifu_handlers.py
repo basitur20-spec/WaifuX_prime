@@ -467,8 +467,39 @@ async def fav_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def waifu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
+    if q.data == "favnoop":
+        await q.answer()
+        return
     data = q.data.split(":")
-    action, token = data[0], data[1]
+    action = data[0]
+    if action == "favlistclose":
+        if q.from_user.id != int(data[1]):
+            await q.answer("This menu is not yours.", show_alert=True)
+            return
+        await q.answer()
+        await q.message.delete()
+        return
+    if action == "favlist":
+        if q.from_user.id != int(data[1]):
+            await q.answer("This menu is not yours.", show_alert=True)
+            return
+        rows = storage.collection(q.from_user.id)
+        await q.answer()
+        await q.edit_message_reply_markup(reply_markup=_fav_list_keyboard(q.from_user.id, rows, int(data[2])))
+        return
+    if action == "favpick":
+        if q.from_user.id != int(data[1]):
+            await q.answer("This selection is not yours.", show_alert=True)
+            return
+        wid = data[2]
+        if not storage.owned_waifu(q.from_user.id, wid):
+            await q.answer("You no longer own this waifu.", show_alert=True)
+            return
+        await q.answer()
+        await q.message.delete()
+        await _send_fav_confirmation(q.message, q.from_user.id, wid)
+        return
+    token = data[1]
     if action.startswith("fav"):
         pending = storage.get_pending(token, q.from_user.id, "favorite")
         if not pending:
