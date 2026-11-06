@@ -596,9 +596,14 @@ async def hunt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await msg.reply_text("❌ NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEXT SPAWN.")
             return
         names = [w["name"], *(__import__("json").loads(w["aliases"] or "[]"))]
-        words = {part.casefold() for name in names for part in re.findall(r"[\w]+", name)}
+        normalized_names = [name.casefold().strip() for name in names]
         supplied_words = set(re.findall(r"[\w]+", supplied))
-        if not (supplied_words & words) and supplied != w["name"].casefold():
+        partial_match = any(
+            supplied_words and supplied_words.issubset(set(re.findall(r"[\w]+", name)))
+            for name in normalized_names
+        )
+        fuzzy_match = bool(difflib.get_close_matches(supplied, normalized_names, n=1, cutoff=0.72))
+        if not partial_match and not fuzzy_match:
             con.rollback()
             await msg.reply_text("❌ NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEXT SPAWN.")
             return
