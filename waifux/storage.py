@@ -487,7 +487,7 @@ def migrate_legacy_data() -> None:
                             "SELECT 1 FROM user_waifus WHERE user_id=? AND waifu_id=? LIMIT 1",
                             (int(row["user_id"]), wid)
                         ).fetchone()
-                        if not exists and row["image"]:
+                        if not exists:
                             con.execute(
                                 "INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source,is_favorite) VALUES (?,?,?,?,?)",
                                 (int(row["user_id"]), wid, now(), "legacy_import", int(row["favorite"] or 0))
