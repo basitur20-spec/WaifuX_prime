@@ -27,7 +27,7 @@ HELP_TEXT = (
     "🌸 WAIFUX PRIME — COMMAND GUIDE 🌸\n\n"
     "📚 COLLECTION & PROFILE\n"
     "/collection [@username|bot_id] — view collection\n"
-    "/fav <waifu_id> — set favourite\n"
+    "/fav [waifu_id] / /fave — choose or set favourite\n"
     "/dmode — choose collection display mode\n"
     "/setprofile <waifu_id> — set profile waifu; reply to a photo to set profile photo\n"
     "/profile [@username|bot_id] — view profile\n\n"
