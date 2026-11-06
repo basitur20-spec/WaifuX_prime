@@ -198,9 +198,24 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         pass
 
 
+def _collection_for_user(uid: int):
+    with storage.connect() as con:
+        profile = con.execute("SELECT display_mode,display_value FROM user_profiles WHERE user_id=?", (uid,)).fetchone()
+    if not profile or profile["display_mode"] == "default":
+        return storage.collection(uid)
+    mode, value = profile["display_mode"], profile["display_value"]
+    if mode == "rarity":
+        return storage.collection(uid, rarity=value)
+    if mode == "anime":
+        return storage.collection(uid, anime=value)
+    if mode == "character":
+        return storage.collection(uid, name=value)
+    return storage.collection(uid)
+
+
 async def collection_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
-    rows = storage.collection(uid)
+    rows = _collection_for_user(uid)
     if not rows:
         await update.effective_message.reply_text("📚 Your collection abhi empty hai. /waifu ya /hunt try karo.")
         return
@@ -249,7 +264,7 @@ async def collection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         await q.message.delete()
         return
-    rows = storage.collection(owner_id)
+    rows = _collection_for_user(owner_id)
     if action == "col":
         await q.edit_message_text(
             _collection_text(rows, int(parts[2]), owner_id),
@@ -342,7 +357,7 @@ async def inline_collection(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     from telegram import InlineQueryResultCachedPhoto
     query = update.inline_query
     term = query.query.strip()
-    rows = storage.collection(query.from_user.id)
+    rows = _collection_for_user(query.from_user.id)
     if term:
         bits = term.split(maxsplit=1)
         term = bits[1] if len(bits) == 2 and bits[0].lower() == "waifu" else term
@@ -561,20 +576,98 @@ async def propose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    target = update.effective_user
-    if context.args and context.args[0].startswith("@"):
-        await update.effective_message.reply_text("Username lookup available nahi jab tak user bot ke sath interact na kare.")
-        return
-    rows = storage.collection(target.id)
-    cash, diamonds = storage.get_balance(target.id)
+    requester = update.effective_user
+    target_id = requester.id
+    if context.args:
+        search = context.args[0].lstrip("@")
+        with storage.connect() as con:
+            if search.isdigit():
+                found = con.execute("SELECT * FROM user_profiles WHERE user_id=?", (int(search),)).fetchone()
+            else:
+                found = con.execute("SELECT * FROM user_profiles WHERE lower(username)=lower(?)", (search,)).fetchone()
+        if not found:
+            await update.effective_message.reply_text("⚠️ User not found. User ko pehle bot start karna hoga.")
+            return
+        target_id = int(found["user_id"])
+    with storage.connect() as con:
+        profile = con.execute("SELECT * FROM user_profiles WHERE user_id=?", (target_id,)).fetchone()
+    rows = storage.collection(target_id)
+    cash, diamonds = storage.get_balance(target_id)
+    name = (profile["first_name"] if profile else None) or str(target_id)
+    username = (profile["username"] if profile else None)
     text = (
-        f"👤 USER PROFILE\n\n🆔 User ID: {target.id}\n"
-        f"👤 Name: {target.full_name}\n"
-        f"🔗 Username: @{target.username or 'N/A'}\n\n"
-        f"💰 Balance: {_fmt(cash)}\n💎 Diamonds: {_fmt(diamonds)}\n"
-        f"💖 Waifus Collected: {len(rows)} / {len(storage.list_waifus(limit=10000))}"
+        f"👤 USER PROFILE\n\n🆔 User ID: {target_id}\n👤 Name: {name}\n"
+        f"🔗 Username: @{username or 'N/A'}\n\n💰 Balance: {_fmt(cash)}\n"
+        f"💎 Diamonds: {_fmt(diamonds)}\n💖 Waifus Collected: {len(rows)} / {len(storage.list_waifus(limit=10000))}"
     )
-    await update.effective_message.reply_text(text)
+    if profile and profile["profile_waifu_id"]:
+        w = storage.get_waifu(profile["profile_waifu_id"])
+        if w:
+            text += f"\n\n🌸 Profile Waifu: {w['name']} | {w['rarity']} | {w['anime']}"
+    if profile and profile["profile_photo"]:
+        await update.effective_message.reply_photo(profile["profile_photo"], caption=text)
+    elif profile and profile["profile_waifu_id"]:
+        w = storage.get_waifu(profile["profile_waifu_id"])
+        if w:
+            await update.effective_message.reply_photo(w["image_file_id"], caption=text)
+            return
+        await update.effective_message.reply_text(text)
+    else:
+        await update.effective_message.reply_text(text)
+
+
+async def dmode_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    args = context.args
+    if not args:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Default", callback_data=f"dmode:{uid}:default"),
+             InlineKeyboardButton("By Character", callback_data=f"dmode:{uid}:character")],
+            [InlineKeyboardButton("By Rarity", callback_data=f"dmode:{uid}:rarity"),
+             InlineKeyboardButton("By Anime", callback_data=f"dmode:{uid}:anime")]
+        ])
+        await update.effective_message.reply_text("🎨 Choose your collection display mode.", reply_markup=keyboard)
+        return
+    mode = args[0].lower()
+    value = " ".join(args[1:]).strip()
+    if mode == "default":
+        value = ""
+    elif mode == "rarity":
+        rarity = _rarity_name(value)
+        if not rarity:
+            await update.effective_message.reply_text("Usage: /dmode rarity WinterArc")
+            return
+        value = rarity
+    elif mode not in {"anime", "character"} or not value:
+        await update.effective_message.reply_text("Use /dmode default, /dmode rarity <name>, /dmode anime <name>, or /dmode character <name>.")
+        return
+    with storage.connect() as con:
+        con.execute(
+            """INSERT INTO user_profiles(user_id,display_mode,display_value,updated_at) VALUES (?,?,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET display_mode=excluded.display_mode,
+            display_value=excluded.display_value,updated_at=excluded.updated_at""",
+            (uid, mode, value or None, storage.now())
+        )
+    await update.effective_message.reply_text(f"✅ Collection mode set to {mode}: {value or 'all waifus'}.")
+
+
+async def dmode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    _, uid_raw, mode = q.data.split(":")
+    uid = int(uid_raw)
+    if q.from_user.id != uid:
+        await q.answer("These settings belong to another user.", show_alert=True)
+        return
+    await q.answer()
+    if mode == "default":
+        with storage.connect() as con:
+            con.execute(
+                "INSERT INTO user_profiles(user_id,display_mode,display_value,updated_at) VALUES (?,?,NULL,?) ON CONFLICT(user_id) DO UPDATE SET display_mode='default',display_value=NULL,updated_at=excluded.updated_at",
+                (uid, "default", storage.now())
+            )
+        await q.edit_message_text("✅ Default collection mode restored.")
+    else:
+        await q.edit_message_text(f"Selected {mode} mode. Now use /dmode {mode} <name>.")
 
 
 async def find_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -973,3 +1066,4 @@ async def spawn_expiry_job(context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         except Exception:
             pass
+
