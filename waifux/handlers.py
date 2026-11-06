@@ -168,4 +168,5 @@ def register_handlers(app: Application, owner_id: int) -> None:
     app.add_handler(InlineQueryHandler(waifu.inline_collection))
     app.add_handler(MessageHandler(filters.ALL, waifu.group_activity), group=1)
     app.job_queue.run_repeating(marketplace.settle_auctions, interval=60, first=30, name="auction-settlement")
+    app.job_queue.run_repeating(waifu.spawn_expiry_job, interval=15, first=15, name="spawn-expiry")
     logger.info("Registered %d commands and %d callback routes", len(command_map), len(callback_map))
