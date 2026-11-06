@@ -230,16 +230,20 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         photo=photo.file_id,
         caption=f"🌐 CHARACTER INFO\n{_display(w)}\n\n🎉 Upload Successful!\n"
                 f"You earned +{_fmt(reward)} coins (3% uploader bonus)."
+                + (f"\n\nAuto-corrected:\n" + "\n".join(corrections) if corrections else "")
+                + (f"\nQuality-based price: {_fmt(price)}" if not data.get("price") else "")
     )
-    try:
-        await context.bot.send_photo(
-            chat_id="@waifuxprime_updates",
-            photo=photo.file_id,
-            caption=f"🌸 New Waifu Uploaded\n{_display(w)}"
-        )
-    except Exception:
-        # Channel delivery is best-effort; successful DB save is not rolled back.
-        pass
+    channel_id = os.getenv("WAIFU_CHANNEL_ID")
+    if channel_id:
+        try:
+            await context.bot.send_photo(
+                chat_id=channel_id,
+                photo=photo.file_id,
+                caption=f"🌸 New Waifu Uploaded\n{_display(w)}"
+            )
+        except Exception:
+            # Channel delivery is best-effort; successful DB save is not rolled back.
+            pass
 
 
 def _collection_for_user(uid: int):
