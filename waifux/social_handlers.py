@@ -75,6 +75,11 @@ async def trade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await q.edit_message_text("❌ Trade request cancelled.")
             return
         con.execute("BEGIN IMMEDIATE")
+        pending_now = con.execute("SELECT status FROM pending_actions WHERE token=?", (token,)).fetchone()
+        if not pending_now or pending_now["status"] != "pending":
+            con.rollback()
+            await q.answer("This trade has already been processed.", show_alert=True)
+            return
         own_a = con.execute(
             "SELECT id FROM user_waifus WHERE user_id=? AND waifu_id=? ORDER BY obtained_at LIMIT 1",
             (actor, data["initiator_waifu"])
