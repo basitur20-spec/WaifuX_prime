@@ -768,7 +768,7 @@ async def dmode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         field = "name" if mode == "character" else "anime"
         values = list(dict.fromkeys(str(row[field]) for row in rows))
         if not values:
-            await q.answer("Your collection is empty.", show_alert=True)
+            await q.edit_message_text("Your collection is empty.", reply_markup=_dmode_main_keyboard(uid))
             return
         token = storage.create_pending(uid, "dmode_choices", {"mode": mode, "values": values}, 600)
         label = "CHARACTER" if mode == "character" else "ANIME"
