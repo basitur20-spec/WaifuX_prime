@@ -824,7 +824,10 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     elif profile and profile["profile_waifu_id"]:
         w = storage.get_waifu(profile["profile_waifu_id"])
         if w:
-            await update.effective_message.reply_photo(w["image_file_id"], caption=text)
+            if w["image_file_id"]:
+                await update.effective_message.reply_photo(w["image_file_id"], caption=text)
+            else:
+                await update.effective_message.reply_text(text)
             return
         await update.effective_message.reply_text(text)
     else:
