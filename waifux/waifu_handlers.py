@@ -444,9 +444,12 @@ async def group_activity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if active:
             return
         con.execute("INSERT OR IGNORE INTO group_settings(chat_id) VALUES (?)", (chat_id,))
+        settings = con.execute("SELECT * FROM group_settings WHERE chat_id=?", (chat_id,)).fetchone()
+        if not settings or not settings["enabled"]:
+            return
         count = MESSAGE_COUNTS[chat_id] + 1
         MESSAGE_COUNTS[chat_id] = count
-        if count < 50:
+        if count < 50 or storage.now() < settings["next_spawn_at"]:
             return
         w = _random_waifu()
         if not w:
@@ -456,6 +459,7 @@ async def group_activity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "INSERT OR REPLACE INTO active_spawns(chat_id,waifu_id,spawned_at,expires_at) VALUES (?,?,?,?)",
             (chat_id, w["waifu_id"], timestamp, timestamp + 300)
         )
+        con.execute("UPDATE group_settings SET next_spawn_at=? WHERE chat_id=?", (timestamp + settings["spawn_interval"] * 60, chat_id))
         MESSAGE_COUNTS[chat_id] = 0
     finally:
         con.close()
@@ -948,3 +952,24 @@ async def remove_uploader_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def uploader_list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await legacy.uploader_list_command(update, context)
+
+
+async def spawn_expiry_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Expire unattended group spawns and announce the escaped character."""
+    expired = []
+    with storage.connect() as con:
+        rows = con.execute("SELECT chat_id,waifu_id FROM active_spawns WHERE expires_at<=?", (storage.now(),)).fetchall()
+        for row in rows:
+            expired.append((row["chat_id"], row["waifu_id"]))
+            con.execute("DELETE FROM active_spawns WHERE chat_id=?", (row["chat_id"],))
+    for chat_id, wid in expired:
+        w = storage.get_waifu(wid)
+        if not w:
+            continue
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"❌ TOO SLOW! The character escaped!\n\n{_display(w)}"
+            )
+        except Exception:
+            pass
