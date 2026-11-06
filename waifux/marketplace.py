@@ -29,21 +29,44 @@ def _available(rarity: str):
         return con.execute(
             """SELECT w.* FROM waifus w
             WHERE w.rarity=? AND w.deleted_at IS NULL
-            AND NOT EXISTS (SELECT 1 FROM auctions a WHERE a.waifu_id=w.waifu_id AND a.status='active')
+            AND NOT EXISTS (SELECT 1 FROM auctions a WHERE a.waifu_id=w.waifu_id)
             ORDER BY RANDOM() LIMIT 100""", (rarity,)
         ).fetchall()
 
 
-def _choose_offer(exclude: set[str]):
+def _choose_offer(uid: int, exclude: set[str]):
     group = random.choices(["common", "rare"], weights=[70, 30], k=1)[0]
-    rarities = COMMON_POOL if group == "common" else RARE_POOL
-    pool = []
-    for rarity in rarities:
-        pool.extend(w for w in _available(rarity) if w["waifu_id"] not in exclude)
-    if not pool:
-        for rarity in RARITY_ORDER:
-            pool.extend(w for w in _available(rarity) if w["waifu_id"] not in exclude)
-    return random.choice(pool) if pool else None
+    rarity_groups = [COMMON_POOL, RARE_POOL] if group == "common" else [RARE_POOL, COMMON_POOL]
+    for rarities in rarity_groups:
+        enabled = []
+        for rarity in rarities:
+            with storage.connect() as con:
+                setting = con.execute("SELECT enabled FROM market_rarity_settings WHERE rarity=?", (rarity,)).fetchone()
+            if not setting or setting["enabled"]:
+                enabled.append(rarity)
+        if not enabled:
+            continue
+        available = []
+        for rarity in enabled:
+            available.extend(w for w in _available(rarity) if w["waifu_id"] not in exclude)
+        if not available:
+            continue
+        with storage.connect() as con:
+            history_ids = {
+                row["waifu_id"] for row in con.execute(
+                    "SELECT waifu_id FROM marketplace_history WHERE user_id=?", (uid,)
+                )
+            }
+        # 5% repeat chance; otherwise prefer waifus this user has never seen in the market.
+        if random.random() < 0.05:
+            repeats = [w for w in available if w["waifu_id"] in history_ids]
+            if repeats:
+                return random.choice(repeats)
+        fresh = [w for w in available if w["waifu_id"] not in history_ids]
+        if fresh:
+            return random.choice(fresh)
+        return random.choice(available)
+    return None
 
 
 def _ensure_offers(uid: int, refresh: bool = False):
@@ -75,7 +98,7 @@ def _ensure_offers(uid: int, refresh: bool = False):
         if refresh:
             con.execute("DELETE FROM marketplace_slots WHERE user_id=? AND day_key=?", (uid, day))
         for slot in (0, 1):
-            w = _choose_offer(exclude)
+            w = _choose_offer(uid, exclude)
             if not w:
                 continue
             exclude.add(w["waifu_id"])
@@ -85,6 +108,11 @@ def _ensure_offers(uid: int, refresh: bool = False):
                 """INSERT INTO marketplace_slots(user_id,slot,waifu_id,discount_percent,day_key,purchased)
                 VALUES (?,?,?,?,?,0)""",
                 (uid, slot, w["waifu_id"], discount, day)
+            )
+            con.execute(
+                """INSERT INTO marketplace_history(user_id,waifu_id,last_offered_at) VALUES (?,?,?)
+                ON CONFLICT(user_id,waifu_id) DO UPDATE SET last_offered_at=excluded.last_offered_at""",
+                (uid, w["waifu_id"], storage.now())
             )
         return con.execute(
             "SELECT * FROM marketplace_slots WHERE user_id=? AND day_key=? ORDER BY slot",
