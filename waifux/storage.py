@@ -62,7 +62,6 @@ def init_db() -> None:
             obtained_at INTEGER NOT NULL,
             source TEXT NOT NULL DEFAULT 'unknown',
             is_favorite INTEGER NOT NULL DEFAULT 0,
-            UNIQUE(user_id, waifu_id)
         );
         CREATE INDEX IF NOT EXISTS idx_user_waifus_user ON user_waifus(user_id);
         CREATE TABLE IF NOT EXISTS user_profiles (
@@ -275,12 +274,12 @@ def add_to_collection(user_id: int, waifu_id: str, source: str = "unknown") -> b
         if not exists:
             con.rollback()
             raise ValueError("Waifu not found.")
-        cur = con.execute(
-            "INSERT OR IGNORE INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)",
+        con.execute(
+            "INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)",
             (int(user_id), str(waifu_id), now(), source),
         )
         con.commit()
-        return cur.rowcount == 1
+        return True
 
 
 def owned_waifu(user_id: int, waifu_id: str):
@@ -315,7 +314,10 @@ def remove_from_collection(user_id: int, waifu_id: str) -> bool:
     with connect() as con:
         con.execute("BEGIN IMMEDIATE")
         cur = con.execute(
-            "DELETE FROM user_waifus WHERE user_id=? AND waifu_id=?",
+            """DELETE FROM user_waifus WHERE id=(
+                SELECT id FROM user_waifus WHERE user_id=? AND waifu_id=?
+                ORDER BY obtained_at LIMIT 1
+            )""",
             (int(user_id), str(waifu_id)),
         )
         con.commit()
