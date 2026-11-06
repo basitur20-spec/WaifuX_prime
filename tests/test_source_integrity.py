@@ -17,6 +17,13 @@ def test_legacy_source_is_preserved_and_syntax_valid():
     _tree("legacy/partial_commands.py")
     assert Path("legacy/source_original.py").exists()
     _tree("legacy/source_original.py")
+    legacy_tree = _tree("legacy/partial_commands.py")
+    names = [
+        node.name for node in ast.walk(legacy_tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    assert names.count("add_waifu_to_collection") == 1
+    assert "add_waifu_id_to_user_collection" in names
 
 
 def test_command_registry_has_no_duplicate_names():
