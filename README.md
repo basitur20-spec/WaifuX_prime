@@ -1,27 +1,38 @@
 # WaifuX Prime
 
-Telegram waifu bot project. The supplied partial command source has been preserved for structured integration.
+Modularized runtime for the supplied Telegram waifu-bot command source. Development is staged: the original 2,805-line implementation remains preserved under `legacy/`, while the entry point, configuration, and handler registration are separated into `main.py` and `waifux/`.
 
-## Current development status
+## Current status
 
-- The original 2,805-line source is stored at `legacy/partial_commands.py` on the integration branch.
-- It is a source archive, **not the production entry point**. It contains duplicate function definitions, repeated handler registrations, overlapping callback patterns, and multiple data stores.
-- The active modular bot is being assembled in stages. Do not run the legacy file as a production bot until the integration and regression checks are complete.
+- `main.py` is the sole application entry point.
+- `waifux/config.py` reads `BOT_TOKEN` and `OWNER_ID` from environment variables / Replit Secrets.
+- `waifux/handlers.py` registers the implemented commands once and uses specific callback patterns.
+- `legacy/partial_commands.py` preserves the supplied feature implementations while business logic is extracted incrementally.
+- The command inventory and known limitations are documented under `docs/`.
+
+This branch is not yet declared production-ready. Some feature names shown in the old help text have no implementation in the supplied source; see `docs/COMMAND_INVENTORY.md` and `docs/KNOWN_ISSUES.md`.
 
 ## Setup
 
-Python 3.11 is recommended. Install the dependencies from `requirements.txt` once the runtime scaffold is added. Configure `BOT_TOKEN` and `OWNER_ID` through Replit Secrets or environment variables. Never commit credentials.
+Python 3.11 is recommended.
 
-## Data safety
+1. Install dependencies: `pip install -r requirements.txt`.
+2. Add `BOT_TOKEN` and numeric `OWNER_ID` to Replit Secrets (or environment variables).
+3. Start the bot with `python main.py`.
 
-Back up the `data/` directory before deploying or migrating data. Existing SQLite/JSON stores must be reconciled deliberately; do not delete or overwrite them during integration.
+Do not commit tokens, local databases, or user data. Back up the `data/` directory before deploying or migrating. Existing SQLite/JSON stores are intentionally not deleted by the integration work.
 
-## Project structure
+## Project layout
 
-- `legacy/` — preserved original source for reference and feature extraction.
-- `docs/` — command inventory, integration notes, and architecture decisions.
-- `waifux/` — production modules to be added after database and handler boundaries are finalized.
+| Path | Responsibility |
+|---|---|
+| `main.py` | Application startup and polling |
+| `waifux/config.py` | Validated environment configuration |
+| `waifux/handlers.py` | Single command/callback registration point |
+| `legacy/partial_commands.py` | Preserved supplied implementation, pending staged extraction |
+| `docs/` | Command inventory and integration notes |
+| `tests/` | Offline source-integrity checks |
 
-## Development workflow
+## Development policy
 
-New feature prompts should be implemented as modules, integrated with the shared database/services, and registered once in the application entry point. Each change should pass syntax/import checks and targeted tests before being considered deployable.
+New feature prompts should be implemented as isolated modules, connected to shared services/storage, registered once, and covered by tests before merging. Never fabricate missing command behavior from help text alone.
