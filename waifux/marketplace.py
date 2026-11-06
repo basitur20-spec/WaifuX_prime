@@ -76,34 +76,61 @@ def _ensure_offers(uid: int, refresh: bool = False):
             "SELECT * FROM marketplace_slots WHERE user_id=? AND day_key=? ORDER BY slot",
             (uid, day)
         ).fetchall()
-        if existing and not refresh:
-            return existing
-        if refresh:
-            refreshes = con.execute(
+    if existing and not refresh:
+        return existing
+
+    selected = []
+    exclude = set()
+    for slot in (0, 1):
+        w = _choose_offer(uid, exclude)
+        if not w:
+            continue
+        exclude.add(w["waifu_id"])
+        low, high = DISCOUNTS.get(w["rarity"], (5, 10))
+        selected.append((slot, w, random.randint(low, high)))
+    if not selected:
+        raise ValueError("Marketplace mein abhi koi eligible waifu available nahi.")
+
+    with storage.connect() as con:
+        con.execute("BEGIN IMMEDIATE")
+        if not refresh:
+            current = con.execute(
+                "SELECT * FROM marketplace_slots WHERE user_id=? AND day_key=? ORDER BY slot",
+                (uid, day)
+            ).fetchall()
+            if current:
+                con.rollback()
+                return current
+        else:
+            refresh_row = con.execute(
                 "SELECT refreshes FROM market_refreshes WHERE user_id=? AND day_key=?",
                 (uid, day)
             ).fetchone()
-            if refreshes and refreshes["refreshes"] >= 2:
+            if refresh_row and refresh_row["refreshes"] >= 2:
+                con.rollback()
                 raise ValueError("Daily refresh limit reached (2/2).")
             con.execute("INSERT OR IGNORE INTO user_balance(user_id) VALUES (?)", (uid,))
-            bal = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (uid,)).fetchone()["cash"]
-            if bal < 50_000:
+            balance = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (uid,)).fetchone()["cash"]
+            if balance < 50_000:
+                con.rollback()
                 raise ValueError("Refresh ke liye 50,000 Cash chahiye.")
             con.execute("UPDATE user_balance SET cash=cash-50000 WHERE user_id=?", (uid,))
             con.execute(
                 """INSERT INTO market_refreshes(user_id,day_key,refreshes) VALUES (?,?,1)
-                ON CONFLICT(user_id,day_key) DO UPDATE SET refreshes=refreshes+1""", (uid, day)
+                ON CONFLICT(user_id,day_key) DO UPDATE SET refreshes=refreshes+1""",
+                (uid, day)
             )
-        exclude = set()
-        if refresh:
             con.execute("DELETE FROM marketplace_slots WHERE user_id=? AND day_key=?", (uid, day))
-        for slot in (0, 1):
-            w = _choose_offer(uid, exclude)
-            if not w:
+
+        inserted = 0
+        for slot, w, discount in selected:
+            still_available = con.execute(
+                "SELECT 1 FROM waifus WHERE waifu_id=? AND deleted_at IS NULL AND image_file_id<>'' "
+                "AND NOT EXISTS (SELECT 1 FROM auctions WHERE auctions.waifu_id=waifus.waifu_id)",
+                (w["waifu_id"],)
+            ).fetchone()
+            if not still_available:
                 continue
-            exclude.add(w["waifu_id"])
-            low, high = DISCOUNTS.get(w["rarity"], (5, 10))
-            discount = random.randint(low, high)
             con.execute(
                 """INSERT INTO marketplace_slots(user_id,slot,waifu_id,discount_percent,day_key,purchased)
                 VALUES (?,?,?,?,?,0)""",
@@ -114,6 +141,11 @@ def _ensure_offers(uid: int, refresh: bool = False):
                 ON CONFLICT(user_id,waifu_id) DO UPDATE SET last_offered_at=excluded.last_offered_at""",
                 (uid, w["waifu_id"], storage.now())
             )
+            inserted += 1
+        if not inserted:
+            con.rollback()
+            raise ValueError("Marketplace offers changed. Please try again.")
+        con.commit()
         return con.execute(
             "SELECT * FROM marketplace_slots WHERE user_id=? AND day_key=? ORDER BY slot",
             (uid, day)
