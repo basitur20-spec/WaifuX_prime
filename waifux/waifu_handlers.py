@@ -87,6 +87,13 @@ def _rarity_name(raw: str) -> str | None:
     return next((r for r in RARITIES if re.sub(r"[^a-z]", "", r.lower()) == key), None)
 
 
+async def _edit_photo_or_text(q, text: str, reply_markup=None):
+    if getattr(q.message, "photo", None):
+        await q.edit_message_caption(caption=text, reply_markup=reply_markup)
+    else:
+        await q.edit_message_text(text, reply_markup=reply_markup)
+
+
 def _display(w) -> str:
     emoji = RARITIES.get(w["rarity"], ("✨",))[0]
     return (
@@ -412,14 +419,14 @@ async def waifu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             w = storage.get_waifu(wid)
             await q.answer("Favourite updated.")
             if action == "favinline":
-                await q.edit_message_caption(
-                    caption=f"❤️ {w['name']} is now your favourite. Open inline mode:",
+                await _edit_photo_or_text(
+                    q, f"❤️ {w['name']} is now your favourite. Open inline mode:",
                     reply_markup=InlineKeyboardMarkup([[
                         InlineKeyboardButton("Open Inline Collection", switch_inline_query_current_chat=f"waifu {w['name']}")
                     ]])
                 )
             else:
-                await q.edit_message_caption(caption=f"❤️ {w['name']} is now your favourite.")
+                await _edit_photo_or_text(q, f"❤️ {w['name']} is now your favourite.")
                 rows = storage.collection(q.from_user.id)
                 await _send_collection(q.message, q.from_user.id, 0, rows, q.from_user.id)
 
@@ -925,7 +932,7 @@ async def find_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     page = int(page_raw)
     caption, pages = _find_caption(w, page)
     await q.answer()
-    await q.edit_message_caption(caption=caption, reply_markup=_find_keyboard(q.from_user.id, wid, page, pages))
+    await _edit_photo_or_text(q, caption, reply_markup=_find_keyboard(q.from_user.id, wid, page, pages))
 
 
 def _dfind_page_text(rows, page: int):
@@ -1052,7 +1059,7 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if action == "giftno":
         storage.finish_pending(token, "cancelled")
         await q.answer("Gift cancelled.")
-        await q.edit_message_caption("The gift has been successfully cancelled.")
+        await _edit_photo_or_text(q, "The gift has been successfully cancelled.")
         return
     if not storage.owned_waifu(q.from_user.id, data["waifu_id"]):
         await q.answer("Waifu ab tumhari collection mein nahi hai.", show_alert=True)
@@ -1083,7 +1090,7 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         con.commit()
     storage.finish_pending(token, "done")
     await q.answer("Gift successful!")
-    await q.edit_message_caption(f"🎉 GIFT SUCCESSFUL!\n\nCharacter ID: {data['waifu_id']}\n{data['receiver_name']} ko successfully gift kar di gayi hai.")
+    await _edit_photo_or_text(q, f"🎉 GIFT SUCCESSFUL!\n\nCharacter ID: {data['waifu_id']}\n{data['receiver_name']} ko successfully gift kar di gayi hai.")
     gifted = storage.get_waifu(data["waifu_id"])
     if gifted:
         try:
@@ -1284,7 +1291,7 @@ async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if action == "delno":
         storage.finish_pending(token, "cancelled")
         await q.answer("Cancelled.")
-        await q.edit_message_caption("❎ DELETE CANCELLED\nNo changes were made. Waifu is safe.")
+        await _edit_photo_or_text(q, "❎ DELETE CANCELLED\nNo changes were made. Waifu is safe.")
         return
     affected = []
     with storage.connect() as con:
@@ -1307,8 +1314,8 @@ async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     (q.from_user.id, "waifu_deleted", json.dumps({"waifu_id":wid,"affected_users":affected}), storage.now()))
         con.commit()
     await q.answer("Deleted.")
-    await q.edit_message_caption(
-        f"✅ WAIFU DELETED SUCCESSFULLY\n\n{waifu['name']}\n🆔 {wid}\n"
+    await _edit_photo_or_text(
+        q, f"✅ WAIFU DELETED SUCCESSFULLY\n\n{waifu['name']}\n🆔 {wid}\n"
         "Removed from catalogue and all user collections. Action logged."
     )
     info = _display(waifu)
