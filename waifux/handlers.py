@@ -189,6 +189,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
         "collection": waifu.collection_cmd,
         "dmode": waifu.dmode_cmd,
         "fav": waifu.fav_cmd,
+        "fave": waifu.fav_cmd,
         "waifu": waifu.waifu_cmd,
         "hunt": waifu.hunt_cmd,
         "spawn": waifu.spawn_cmd,
@@ -245,7 +246,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
     app.add_handler(CallbackQueryHandler(waifu.dmode_callback, pattern=r"^(?:dmode:|dmrarity:|dmchoices:|dmback:|dmset:|dmpick:|dmclose:|dmnoop$)"))
     app.add_handler(CallbackQueryHandler(waifu.find_callback, pattern=r"^(?:find:|finddel:|findnoop$)"))
     app.add_handler(CallbackQueryHandler(waifu.dfind_callback, pattern=r"^(?:dfind:|dfinddel:|dfindnoop$)"))
-    app.add_handler(CallbackQueryHandler(waifu.waifu_callback, pattern=r"^fav(?:inline|confirm|cancel):"))
+    app.add_handler(CallbackQueryHandler(waifu.waifu_callback, pattern=r"^(?:fav(?:inline|confirm|cancel|list|pick|listclose):|favnoop$)"))
     app.add_handler(CallbackQueryHandler(waifu.gift_callback, pattern=r"^gift(?:ok|no):"))
     app.add_handler(CallbackQueryHandler(waifu.sell_callback, pattern=r"^sell(?:ok|no):"))
     app.add_handler(CallbackQueryHandler(waifu.delete_callback, pattern=r"^del(?:ok|no):"))
