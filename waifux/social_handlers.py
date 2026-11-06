@@ -120,6 +120,13 @@ async def trade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 pass
 
 
+async def _edit_photo_or_text(q, text: str):
+    if getattr(q.message, "photo", None):
+        await q.edit_message_caption(caption=text)
+    else:
+        await q.edit_message_text(text)
+
+
 async def give_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     if not (_owner(uid) or _sudo(uid) or _uploader(uid)):
@@ -187,13 +194,15 @@ async def give_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     token = storage.create_pending(uid, "admin_gift", {
         "target_id": target_id, "waifu_id": w["waifu_id"], "target_name": target_name
     }, 60)
-    await msg.reply_photo(
-        w["image_file_id"], caption=f"🎁 CONFIRM WAIFU GIFT\n{_display(w)}\nReceiver: {target_name}\nConfirm gift?",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Confirm Gift", callback_data=f"giveok:{token}"),
-            InlineKeyboardButton("❌ Cancel", callback_data=f"givno:{token}")
-        ]])
-    )
+    caption = f"🎁 CONFIRM WAIFU GIFT\n{_display(w)}\nReceiver: {target_name}\nConfirm gift?"
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Confirm Gift", callback_data=f"giveok:{token}"),
+        InlineKeyboardButton("❌ Cancel", callback_data=f"givno:{token}")
+    ]])
+    if w["image_file_id"]:
+        await msg.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
+    else:
+        await msg.reply_text(caption, reply_markup=keyboard)
 
 
 async def give_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -207,7 +216,7 @@ async def give_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if action == "givno":
         storage.finish_pending(token, "cancelled")
         await q.answer("Gift cancelled.")
-        await q.edit_message_caption("Gift cancelled.")
+        await _edit_photo_or_text(q, "Gift cancelled.")
         return
     w = storage.get_waifu(data["waifu_id"])
     if not w:
@@ -231,7 +240,7 @@ async def give_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         con.commit()
     await q.answer("Gift sent.")
-    await q.edit_message_caption("🎉 Gift successfully sent.")
+    await _edit_photo_or_text(q, "🎉 Gift successfully sent.")
     try:
         await context.bot.send_photo(
             data["target_id"], w["image_file_id"],
