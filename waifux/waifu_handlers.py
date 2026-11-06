@@ -115,7 +115,7 @@ def _random_waifu(rarities: list[str] | None = None, respect_spawn_settings: boo
         with storage.connect() as con:
             active_ids = {row["waifu_id"] for row in con.execute("SELECT waifu_id FROM auctions")}
         if pool:
-            available.extend((rarity, w) for w in pool if w["waifu_id"] not in active_ids)
+            available.extend((rarity, w) for w in pool if w["waifu_id"] not in active_ids and w["image_file_id"])
     if not available:
         return None
     names = list(dict.fromkeys(r for r, _ in available))
