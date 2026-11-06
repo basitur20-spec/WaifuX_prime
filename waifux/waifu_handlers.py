@@ -693,18 +693,19 @@ def _dmode_rarity_keyboard(uid: int, page: int):
     return InlineKeyboardMarkup(rows)
 
 
-def _dmode_choices_keyboard(uid: int, token: str, page: int, count: int):
+def _dmode_choices_keyboard(uid: int, token: str, page: int, values: list[str]):
+    count = len(values)
     pages = max(1, (count + 11) // 12)
     rows = []
     start = page * 12
     for index in range(start, min(start + 12, count), 2):
         row = [InlineKeyboardButton(
-            str(index + 1),
+            values[index][:40],
             callback_data=f"dmpick:{uid}:{token}:{index}"
         )]
         if index + 1 < min(start + 12, count):
             row.append(InlineKeyboardButton(
-                str(index + 2),
+                values[index+1][:40],
                 callback_data=f"dmpick:{uid}:{token}:{index+1}"
             ))
         rows.append(row)
@@ -773,7 +774,7 @@ async def dmode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         label = "CHARACTER" if mode == "character" else "ANIME"
         lines = [f"🎭 CHOOSE {label} TO FILTER BY:"]
         lines.extend(f"{i+1}. {value}" for i, value in enumerate(values[:60]))
-        await q.edit_message_text("\n".join(lines), reply_markup=_dmode_choices_keyboard(uid, token, 0, min(len(values),60)))
+        await q.edit_message_text("\n".join(lines), reply_markup=_dmode_choices_keyboard(uid, token, 0, values[:60]))
         return
     if action == "dmrarity":
         page = int(parts[2])
@@ -791,7 +792,7 @@ async def dmode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await q.answer()
         await q.edit_message_text(
             "\n".join([f"CHOOSE {data['mode'].upper()} TO FILTER BY:"] + [f"{i+1}. {value}" for i, value in enumerate(values)]),
-            reply_markup=_dmode_choices_keyboard(uid, token, page, len(values))
+            reply_markup=_dmode_choices_keyboard(uid, token, page, values)
         )
         return
     if action == "dmset":
