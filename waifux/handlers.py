@@ -64,6 +64,17 @@ def _install_runtime_roles(owner_id: int) -> None:
     legacy.UPLOADER_USERS = set()
 
 
+def _sync_legacy_role_sets() -> None:
+    """Refresh compatibility sets used by older command implementations."""
+    legacy.SUDO_USERS = {int(value) for value in legacy.load_sudo()}
+    legacy.UPLOADER_USERS = {int(value) for value in legacy.load_uploaders()}
+
+
+async def redeem_command(update, context) -> None:
+    _sync_legacy_role_sets()
+    await legacy.redeem_cmd(update, context)
+
+
 def register_handlers(app: Application, owner_id: int) -> None:
     """Register each command once and route callbacks by specific prefixes."""
     _install_runtime_roles(owner_id)
@@ -87,7 +98,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
         "dtops": legacy.dtops_cmd,
         "collection": legacy.collection_cmd,
         "gen": legacy.gen_cmd,
-        "redeem": legacy.redeem_cmd,
+        "redeem": redeem_command,
         "dgen": legacy.dgen_cmd,
         "dredeem": legacy.dredeem_cmd,
         "redeemtoggle": legacy.redeem_toggle,
