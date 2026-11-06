@@ -135,6 +135,7 @@ async def redeem_command(update, context) -> None:
 
 
 async def dredeem_command(update, context) -> None:
+    _sync_legacy_role_sets()
     await legacy.dredeem_cmd(update, context)
     uid = update.effective_user.id
     try:
