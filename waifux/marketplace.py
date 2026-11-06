@@ -28,7 +28,7 @@ def _available(rarity: str):
     with storage.connect() as con:
         return con.execute(
             """SELECT w.* FROM waifus w
-            WHERE w.rarity=? AND w.deleted_at IS NULL
+            WHERE w.rarity=? AND w.deleted_at IS NULL AND w.image_file_id<>''
             AND NOT EXISTS (SELECT 1 FROM auctions a WHERE a.waifu_id=w.waifu_id)
             ORDER BY RANDOM() LIMIT 10000""", (rarity,)
         ).fetchall()
