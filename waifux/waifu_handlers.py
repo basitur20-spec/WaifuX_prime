@@ -221,24 +221,38 @@ def _collection_for_user(uid: int):
 
 async def collection_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
-    rows = _collection_for_user(uid)
+    owner_id = uid
+    if context.args:
+        target = context.args[0].lstrip("@")
+        with storage.connect() as con:
+            if target.isdigit():
+                profile = con.execute("SELECT user_id FROM user_profiles WHERE user_id=?", (int(target),)).fetchone()
+            else:
+                profile = con.execute("SELECT user_id FROM user_profiles WHERE lower(username)=lower(?)", (target,)).fetchone()
+        if not profile:
+            await update.effective_message.reply_text("User not found. They must have started the bot first.")
+            return
+        owner_id = int(profile["user_id"])
+    rows = _collection_for_user(owner_id)
     if not rows:
-        await update.effective_message.reply_text("📚 Your collection abhi empty hai. /waifu ya /hunt try karo.")
+        await update.effective_message.reply_text("📚 This collection is empty.")
         return
-    favourites = [w for w in storage.collection(uid) if w["is_favorite"]]
-    if favourites:
-        fav = favourites[0]
-        await update.effective_message.reply_photo(fav["image_file_id"], caption=f"❤️ Your favourite waifu\n{_display(fav)}")
-    await _send_collection(update.effective_message, uid, 0, rows, owner_id=uid)
+    if owner_id == uid:
+        favourites = [w for w in storage.collection(uid) if w["is_favorite"]]
+        if favourites:
+            fav = favourites[0]
+            await update.effective_message.reply_photo(fav["image_file_id"], caption=f"❤️ Your favourite waifu\n{_display(fav)}")
+    await _send_collection(update.effective_message, owner_id, 0, rows, viewer_id=uid)
 
 
 async def _send_collection(message, owner_id: int, page: int, rows=None, viewer_id=None):
-    rows = rows if rows is not None else storage.collection(owner_id)
+    rows = rows if rows is not None else _collection_for_user(owner_id)
     page_size = 10
     pages = max(1, (len(rows) + page_size - 1) // page_size)
     page = max(0, min(page, pages - 1))
     chunk = rows[page * page_size:(page + 1) * page_size]
-    title = "YOUR WAIFU COLLECTION" if owner_id == viewer_id or viewer_id is None else "WAIFU COLLECTION (VIEW ONLY)"
+    viewer_id = owner_id if viewer_id is None else viewer_id
+    title = "YOUR WAIFU COLLECTION" if owner_id == viewer_id else "WAIFU COLLECTION (VIEW ONLY)"
     lines = [f"📚 {title}", f"Page {page + 1}/{pages}", ""]
     last_anime = None
     for w in chunk:
@@ -248,40 +262,51 @@ async def _send_collection(message, owner_id: int, page: int, rows=None, viewer_
         icon = RARITIES.get(w["rarity"], ("✨",))[0]
         lines.append(f"{'❤️ ' if w['is_favorite'] else ''}🆔 {w['waifu_id']} | {icon} | {w['name']}")
     buttons = []
-    if owner_id == (viewer_id or owner_id):
+    if owner_id == viewer_id:
         buttons.append([
             InlineKeyboardButton("◀ Prev", callback_data=f"col:{owner_id}:{max(0,page-1)}"),
             InlineKeyboardButton("Next ▶", callback_data=f"col:{owner_id}:{min(pages-1,page+1)}")
         ])
-        buttons.append([InlineKeyboardButton("✨ Waifus", callback_data=f"colimg:{owner_id}:{page}")])
-    buttons.append([InlineKeyboardButton("❌ Close", callback_data=f"colclose:{owner_id}")])
+    buttons.append([InlineKeyboardButton("✨ Waifus", callback_data=f"colimg:{owner_id}:{viewer_id}:{page}")])
+    if owner_id == viewer_id:
+        buttons.append([InlineKeyboardButton("❌ Close", callback_data=f"colclose:{owner_id}:{viewer_id}")])
     await message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(buttons))
 
 
 async def collection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     parts = q.data.split(":")
-    action, owner_id = parts[0], int(parts[1])
-    if action != "colclose" and q.from_user.id != owner_id:
-        await q.answer("Only the collection owner can use these controls.", show_alert=True)
-        return
-    await q.answer()
+    action = parts[0]
+    owner_id = int(parts[1])
     if action == "colclose":
-        if q.from_user.id != owner_id:
+        viewer_id = int(parts[2])
+        if q.from_user.id != viewer_id:
+            await q.answer("This control is not yours.", show_alert=True)
             return
+        await q.answer()
         await q.message.delete()
         return
-    rows = _collection_for_user(owner_id)
-    if action == "col":
-        await q.edit_message_text(
-            _collection_text(rows, int(parts[2]), owner_id),
-            reply_markup=_collection_keyboard(owner_id, int(parts[2]), len(rows))
-        )
-    elif action == "colimg":
+    if action == "colimg":
+        viewer_id, page = int(parts[2]), int(parts[3])
+        if q.from_user.id != viewer_id:
+            await q.answer("This image view is not yours.", show_alert=True)
+            return
+        await q.answer()
+        rows = _collection_for_user(owner_id)
         images = [w for w in rows if w["image_file_id"]]
-        page = int(parts[2])
         for w in images[page * 10:(page + 1) * 10]:
             await q.message.reply_photo(w["image_file_id"], caption=f"{w['name']} | {w['waifu_id']}")
+        return
+    if q.from_user.id != owner_id:
+        await q.answer("Only the collection owner can change pages.", show_alert=True)
+        return
+    await q.answer()
+    rows = _collection_for_user(owner_id)
+    page = int(parts[2])
+    await q.edit_message_text(
+        _collection_text(rows, page, owner_id),
+        reply_markup=_collection_keyboard(owner_id, page, len(rows))
+    )
 
 
 def _collection_text(rows, page, owner_id):
@@ -301,7 +326,7 @@ def _collection_keyboard(uid, page, count):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("◀ Prev", callback_data=f"col:{uid}:{max(0,page-1)}"),
          InlineKeyboardButton("Next ▶", callback_data=f"col:{uid}:{min(pages-1,page+1)}")],
-        [InlineKeyboardButton("✨ Waifus", callback_data=f"colimg:{uid}:{page}")],
+        [InlineKeyboardButton("✨ Waifus", callback_data=f"colimg:{uid}:{uid}:{page}")],
         [InlineKeyboardButton("❌ Close", callback_data=f"colclose:{uid}")]
     ])
 
