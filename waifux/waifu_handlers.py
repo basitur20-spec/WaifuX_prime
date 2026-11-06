@@ -537,9 +537,9 @@ async def group_activity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 chat_id, uid, permissions=__import__("telegram").ChatPermissions(can_send_messages=False),
                 until_date=int(time.time()) + 300
             )
-            await msg.reply_text(f"{msg.from_user.first_name}, your messages won't be counted for 5 minutes.\nYou cannot spam to get characters.")
+            await msg.reply_text(f"{msg.from_user.first_name}, you have been muted for 5 minutes due to spam.\nYour messages will not count toward character spawns.")
         except Exception:
-            pass
+            await msg.reply_text("⚠️ Anti-spam detected, but I could not mute this user. Please make the bot an administrator with permission to restrict members.")
         q.clear()
         return
     con = storage.raw_connect()
