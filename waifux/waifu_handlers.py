@@ -685,23 +685,89 @@ async def dmode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await q.edit_message_text(f"Selected {mode} mode. Now use /dmode {mode} <name>.")
 
 
+def _find_users_page(waifu_id: str, page: int):
+    with storage.connect() as con:
+        total = con.execute("SELECT COUNT(*) AS n FROM user_waifus WHERE waifu_id=?", (waifu_id,)).fetchone()["n"]
+        rows = con.execute(
+            """SELECT uw.user_id,COUNT(*) AS copies,MIN(uw.obtained_at) AS first_obtained,
+            up.username,up.first_name
+            FROM user_waifus uw LEFT JOIN user_profiles up ON up.user_id=uw.user_id
+            WHERE uw.waifu_id=? GROUP BY uw.user_id
+            ORDER BY first_obtained ASC LIMIT 10 OFFSET ?""",
+            (waifu_id, page * 10)
+        ).fetchall()
+        total_users = con.execute("SELECT COUNT(DISTINCT user_id) AS n FROM user_waifus WHERE waifu_id=?", (waifu_id,)).fetchone()["n"]
+    return int(total), rows, int(total_users)
+
+
+def _find_caption(w, page: int):
+    total, rows, total_users = _find_users_page(w["waifu_id"], page)
+    lines = [f"🌐 CHARACTER INFO\n{_display(w)}\n🌍 GLOBALLY PICKED: {total} times\n",
+             f"👥 USERS WHO HAVE THIS WAIFU ({total_users} total):"]
+    for index, row in enumerate(rows, page * 10 + 1):
+        name = f"@{row['username']}" if row["username"] else (row["first_name"] or f"User {row['user_id']}")
+        lines.append(f"{index}. {name} x{row['copies']}")
+    return "\n".join(lines), max(1, (total_users + 9) // 10)
+
+
+def _find_keyboard(requester: int, wid: str, page: int, total_pages: int):
+    buttons = []
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅ Back Page", callback_data=f"find:{requester}:{wid}:{page-1}"))
+    nav.append(InlineKeyboardButton(f"📑 {page+1}/{total_pages}", callback_data="findnoop"))
+    if page + 1 < total_pages:
+        nav.append(InlineKeyboardButton("Next ➡", callback_data=f"find:{requester}:{wid}:{page+1}"))
+    buttons.append(nav)
+    buttons.append([InlineKeyboardButton("🗑 Discard", callback_data=f"finddel:{requester}")])
+    return InlineKeyboardMarkup(buttons)
+
+
 async def find_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
-        await update.effective_message.reply_text("Usage: /find <waifu_id or name>")
+        await update.effective_message.reply_text("Usage: /find <waifu_id>")
         return
-    term = " ".join(context.args).strip()
-    if term.isdigit():
-        w = storage.get_waifu(term)
-        if w:
-            await update.effective_message.reply_photo(w["image_file_id"], caption=_display(w))
-        else:
-            await update.effective_message.reply_text("Waifu not found.")
+    wid = context.args[0]
+    w = storage.get_waifu(wid)
+    if not w:
+        await update.effective_message.reply_text("THE WAIFU ID IS NOT FOUND IN BOT DATABASE.")
         return
-    matches = [w for w in storage.list_waifus(limit=10000) if term.casefold() in w["name"].casefold()]
-    if not matches:
-        await update.effective_message.reply_text("No matching waifu found.")
+    total, rows, total_users = _find_users_page(wid, 0)
+    if not rows:
+        await update.effective_message.reply_text("❌ NO CHARACTER FOUND WITH THIS 🆔.")
         return
-    await update.effective_message.reply_text("\n\n".join(_display(w) for w in matches[:15]))
+    caption, pages = _find_caption(w, 0)
+    await update.effective_message.reply_photo(
+        w["image_file_id"], caption=caption,
+        reply_markup=_find_keyboard(update.effective_user.id, wid, 0, pages)
+    )
+
+
+async def find_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q.data == "findnoop":
+        await q.answer()
+        return
+    parts = q.data.split(":")
+    if parts[0] == "finddel":
+        if q.from_user.id != int(parts[1]):
+            await q.answer("Only the search owner can discard this result.", show_alert=True)
+            return
+        await q.answer()
+        await q.message.delete()
+        return
+    _, owner_raw, wid, page_raw = parts
+    if q.from_user.id != int(owner_raw):
+        await q.answer("Only the search owner can use these buttons.", show_alert=True)
+        return
+    w = storage.get_waifu(wid)
+    if not w:
+        await q.answer("Waifu no longer exists.", show_alert=True)
+        return
+    page = int(page_raw)
+    caption, pages = _find_caption(w, page)
+    await q.answer()
+    await q.edit_message_caption(caption=caption, reply_markup=_find_keyboard(q.from_user.id, wid, page, pages))
 
 
 async def dfind_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -728,9 +794,14 @@ async def f_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     w = storage.get_waifu(context.args[0])
     if not w:
-        await update.effective_message.reply_text("Waifu not found.")
+        await update.effective_message.reply_text("THIS ID IS NOT FOUND IN BOT DATABASE.")
         return
-    await update.effective_message.reply_photo(w["image_file_id"], caption=_display(w))
+    with storage.connect() as con:
+        picked = con.execute("SELECT COUNT(*) AS n FROM user_waifus WHERE waifu_id=?", (w["waifu_id"],)).fetchone()["n"]
+    await update.effective_message.reply_photo(
+        w["image_file_id"],
+        caption=f"🌐 CHARACTER INFO\n{_display(w)}\n🌍 GLOBALLY PICKED: {picked} times..."
+    )
 
 
 async def gift_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
