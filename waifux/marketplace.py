@@ -89,7 +89,7 @@ def _ensure_offers(uid: int, refresh: bool = False):
         low, high = DISCOUNTS.get(w["rarity"], (5, 10))
         selected.append((slot, w, random.randint(low, high)))
     if not selected:
-        raise ValueError("Marketplace mein abhi koi eligible waifu available nahi.")
+        raise ValueError("No eligible waifus are currently available in the marketplace.")
 
     with storage.connect() as con:
         con.execute("BEGIN IMMEDIATE")
@@ -113,7 +113,7 @@ def _ensure_offers(uid: int, refresh: bool = False):
             balance = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (uid,)).fetchone()["cash"]
             if balance < 50_000:
                 con.rollback()
-                raise ValueError("Refresh ke liye 50,000 Cash chahiye.")
+                raise ValueError("You need 50,000 Cash to refresh.")
             con.execute("UPDATE user_balance SET cash=cash-50000 WHERE user_id=?", (uid,))
             con.execute(
                 """INSERT INTO market_refreshes(user_id,day_key,refreshes) VALUES (?,?,1)
@@ -201,7 +201,7 @@ async def marketplace_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.effective_message.reply_text(str(exc))
         return
     if not offers:
-        await update.effective_message.reply_text("Marketplace mein abhi offers available nahi.")
+        await update.effective_message.reply_text("There are no marketplace offers available right now.")
         return
     offer = offers[0]
     w = storage.get_waifu(offer["waifu_id"])
@@ -334,7 +334,7 @@ async def auction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if not 1 <= hours <= 168 or amount <= 0:
             raise ValueError
     except ValueError:
-        await update.effective_message.reply_text("Starting bid positive ho aur duration 1–168 hours.")
+        await update.effective_message.reply_text("The starting bid must be positive and the duration must be 1–168 hours.")
         return
     w = storage.get_waifu(wid)
     if not w or not w["image_file_id"]:
@@ -393,14 +393,14 @@ async def auction_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
     context.user_data["active_auction_id"] = int(auction_id)
     await q.answer()
-    await q.message.reply_text("Bid place karne ke liye isi chat mein /bid <amount> bhejo.")
+    await q.message.reply_text("Send /bid <amount> in this chat to place a bid.")
 
 
 async def bid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     auction_id = context.user_data.get("active_auction_id")
     if not auction_id or not context.args or not context.args[0].isdigit():
-        await update.effective_message.reply_text("Marketplace ke Auction button se open karo, phir /bid <amount> bhejo.")
+        await update.effective_message.reply_text("Open the auction using the Marketplace button, then send /bid <amount>.")
         return
     amount = int(context.args[0])
     with storage.connect() as con:
@@ -413,7 +413,7 @@ async def bid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         current = max(int(auction["current_bid"]), int(auction["starting_bid"]))
         if amount <= current:
-            await update.effective_message.reply_text(f"Bid current bid {_fmt(current)} se zyada honi chahiye.")
+            await update.effective_message.reply_text(f"Your bid must be higher than the current bid of {_fmt(current)}.")
             return
         cash, _ = storage.get_balance(uid)
         if cash < amount:
@@ -422,7 +422,7 @@ async def bid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     token = storage.create_pending(uid, "auction_bid", {"auction_id": auction_id, "amount": amount}, 60)
     await update.effective_message.reply_text(
         f"🔨 BID CONFIRMATION\n\nYour bid: {_fmt(amount)} Cash\nCurrent bid: {_fmt(current)} Cash\n"
-        "Cash abhi deduct nahi hoga. Auction jeetne par amount charge hoga. Confirm?",
+        "Cash will not be deducted now. You will be charged only if you win the auction. Confirm?",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ Confirm Bid", callback_data=f"bidok:{token}"),
             InlineKeyboardButton("❌ Cancel", callback_data=f"bidno:{token}")
@@ -525,7 +525,7 @@ async def marketspawn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     rarity = _rarity_name(context.args[0])
     status = context.args[1].lower()
     if rarity not in COMMON_POOL + RARE_POOL or status not in {"on", "off"}:
-        await update.effective_message.reply_text("Marketplace rarity ya on/off value sahi nahi.")
+        await update.effective_message.reply_text("Invalid marketplace rarity or on/off value.")
         return
     with storage.connect() as con:
         con.execute(

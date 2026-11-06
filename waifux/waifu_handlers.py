@@ -6,17 +6,17 @@ from __future__ import annotations
 
 import asyncio
 import difflib
-import os
-import difflib
+import json
 import os
 import random
 import re
 import time
+import urllib.request
 from collections import defaultdict, deque
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
 from telegram.constants import ChatType
 from telegram.ext import ContextTypes
 
@@ -192,7 +192,7 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         details_text = msg.text or msg.caption or ""
     if not photo:
         await msg.reply_text(
-            "Image ke sath caption mein details likho ya image ko reply karke /upload use karo.\n\n"
+            "Add the details in the photo caption, or reply to the photo with /upload.\n\n"
             "Name: Character Name\nRarity: Shiny (or 1-19)\nAnime: Anime Name\nPrice: optional\nID: optional\nAliases: optional comma-separated names"
         )
         return
@@ -200,30 +200,30 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     name, anime = data.get("name"), data.get("anime")
     rarity = _rarity_name(data.get("rarity", ""))
     if not name or not anime or not rarity:
-        await msg.reply_text("Upload details incomplete/invalid hain. Name, Rarity aur Anime zaroor do.")
+        await msg.reply_text("Upload details are incomplete or invalid. Name, Rarity, and Anime are required.")
         return
     low, high = RARITIES[rarity][1]
     name, anime, corrections = _correct_catalogue_labels(name.strip(), anime.strip())
     try:
         price = int(re.sub(r"[^0-9]", "", data.get("price", ""))) if data.get("price") else _quality_based_price(photo, rarity)
         if not low <= price <= high:
-            raise ValueError(f"{rarity} ki allowed price {_fmt(low)}–{_fmt(high)} hai.")
+            raise ValueError(f"{rarity} has an allowed price range of {_fmt(low)}–{_fmt(high)}.")
         wid = data.get("id") or ""
         if not wid:
             used = {str(w["waifu_id"]) for w in storage.list_waifus(limit=10000)}
             free = [str(n).zfill(4) for n in range(1000, 10000) if str(n).zfill(4) not in used]
             if not free:
-                raise ValueError("Waifu ID space khatam ho gaya.")
+                raise ValueError("No free Waifu IDs are available.")
             wid = random.choice(free)
         if len(wid) != 4 or not wid.isdigit():
-            raise ValueError("ID exactly 4 digits ka hona chahiye.")
+            raise ValueError("The ID must contain exactly 4 digits.")
         storage.add_waifu(wid, name, anime, rarity, price, photo.file_id, uid, [a.strip() for a in data.get('aliases', '').split(',') if a.strip()])
         reward = int(price * 0.03)
         if reward:
             storage.change_balance(uid, cash_delta=reward)
         storage.add_audit(uid, "waifu_upload", details={"waifu_id": wid, "rarity": rarity})
     except Exception as exc:
-        await msg.reply_text(f"❌ Upload reject ho gaya: {exc}")
+        await msg.reply_text(f"❌ Upload rejected: {exc}")
         return
     w = storage.get_waifu(wid)
     await msg.reply_photo(
@@ -409,7 +409,7 @@ def _collection_keyboard(uid, page, count):
 async def _send_fav_confirmation(message, uid: int, wid: str):
     w = storage.owned_waifu(uid, wid)
     if not w:
-        await message.reply_text("😔 Ye waifu tumhari collection mein nahi hai.")
+        await message.reply_text("😔 This waifu is not in your collection.")
         return
     token = storage.create_pending(uid, "favorite", {"waifu_id": w["waifu_id"]}, 60)
     keyboard = InlineKeyboardMarkup([[
@@ -552,7 +552,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     w = _random_waifu(["Starter", "Rising", "Shiny", "Ultimate", "RoyalArc"])
     if not w:
-        await update.effective_message.reply_text("Abhi reward pool mein waifus available nahi hain.")
+        await update.effective_message.reply_text("No waifus are currently available in the reward pool.")
         return
     with storage.connect() as con:
         con.execute("BEGIN IMMEDIATE")
@@ -575,7 +575,7 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def hunt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     if msg.chat.type == ChatType.PRIVATE:
-        await msg.reply_text("Hunt sirf groups mein active hota hai.")
+        await msg.reply_text("Hunt is available in groups only.")
         return
     supplied = " ".join(context.args).casefold().strip()
     if not supplied:
@@ -683,7 +683,7 @@ async def spawn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     rarity, status = _rarity_name(context.args[0]), context.args[1].lower()
     if not rarity or status not in {"on", "off"}:
-        await update.effective_message.reply_text("Rarity ya on/off value sahi nahi.")
+        await update.effective_message.reply_text("Invalid rarity or on/off value.")
         return
     with storage.connect() as con:
         con.execute(
@@ -698,7 +698,7 @@ async def changetime_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not _sudo(update.effective_user.id):
         return
     if update.effective_message.chat.type == ChatType.PRIVATE:
-        await update.effective_message.reply_text("Ye command group mein use karo: /changetime <2-120 minutes>")
+        await update.effective_message.reply_text("Use this command in a group: /changetime <2-120 minutes>")
         return
     try:
         minutes = int(context.args[0])
@@ -734,10 +734,63 @@ async def marriage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     w = _random_waifu(["Shiny", "Ultimate"])
     if not w:
-        await update.effective_message.reply_text("Marriage reward pool mein abhi waifu nahi.")
+        await update.effective_message.reply_text("No waifus are currently available for marriage rewards.")
         return
     storage.add_to_collection(uid, w["waifu_id"], "marriage")
     await update.effective_message.reply_photo(w["image_file_id"], caption=f"💍 Congratulations! You are now married!\n{_display(w)}")
+
+
+def _request_waifu_api_images(limit: int = 3) -> list[str]:
+    """Fetch SFW anime image URLs from Waifu API."""
+    request = urllib.request.Request(
+        f"https://api.waifu.best/images?PageSize={limit}&IsNsfw=False",
+        headers={"Accept-Version": "v7", "User-Agent": "WaifuX-Prime/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=12) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    urls = []
+    for item in payload.get("items", []):
+        url = item.get("url")
+        if isinstance(url, str) and url.startswith("https://"):
+            urls.append(url)
+    return urls
+
+
+_PROPOSAL_INTRO_LOCK = asyncio.Lock()
+
+
+async def _proposal_intro_image() -> str | None:
+    """Use one persistent intro image for every user and every bot restart."""
+    cache_path = storage.DATA_DIR / "propose_intro_image_url.txt"
+    async with _PROPOSAL_INTRO_LOCK:
+        try:
+            if cache_path.exists():
+                cached = cache_path.read_text(encoding="utf-8").strip()
+                if cached.startswith("https://"):
+                    return cached
+            urls = await asyncio.to_thread(_request_waifu_api_images, 1)
+            if not urls:
+                return None
+            storage.DATA_DIR.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(urls[0], encoding="utf-8")
+            return urls[0]
+        except Exception:
+            return None
+
+
+async def _proposal_gallery_images(intro_url: str | None) -> list[str]:
+    """Fetch three fresh SFW anime pictures for the proposal gallery."""
+    try:
+        urls = await asyncio.to_thread(_request_waifu_api_images, 6)
+        unique = []
+        for url in urls:
+            if url != intro_url and url not in unique:
+                unique.append(url)
+            if len(unique) == 3:
+                break
+        return unique
+    except Exception:
+        return []
 
 
 async def propose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -754,44 +807,70 @@ async def propose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         cash = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (uid,)).fetchone()["cash"]
         if cash < 30_000:
             con.rollback()
-            await update.effective_message.reply_text("YOU NEED 30,000 CASH💸 TO PROPOSE.")
+            await update.effective_message.reply_text("You need 30,000 Cash 💸 to propose.")
             return
         con.execute("UPDATE user_balance SET cash=cash-30000 WHERE user_id=?", (uid,))
         con.execute("INSERT INTO cooldowns(user_id,action,expires_at) VALUES (?,?,?) ON CONFLICT(user_id,action) DO UPDATE SET expires_at=excluded.expires_at", (uid, "propose", storage.now()+300))
         con.execute("INSERT INTO transactions(tx_id,actor_id,action,amount,created_at) VALUES (?,?,?,?,?)", (__import__("uuid").uuid4().hex, uid, "propose_fee", 30000, storage.now()))
         con.commit()
-    try:
-        await context.bot.copy_message(
-            chat_id=update.effective_chat.id,
-            from_chat_id="@movieandweb_s_group",
-            message_id=17959,
-            caption=f"{update.effective_user.first_name} 💫 The moment you've been waiting for 💫"
-        )
-    except Exception:
+
+    intro_url = await _proposal_intro_image()
+    if intro_url:
+        try:
+            await update.effective_message.reply_photo(
+                intro_url,
+                caption=f"💫 {update.effective_user.first_name}, the moment you've been waiting for... 💫",
+            )
+        except Exception:
+            await update.effective_message.reply_text(
+                f"💫 {update.effective_user.first_name}, the moment you've been waiting for... 💫"
+            )
+    else:
         await update.effective_message.reply_text(
-            f"{update.effective_user.first_name} 💫 The moment you've been waiting for 💫"
+            f"💫 {update.effective_user.first_name}, the moment you've been waiting for... 💫"
         )
-    processing = await update.effective_message.reply_text("ᴘʀᴏᴘᴏꜱɪɴɢ ʜᴇʀ.... 💍")
+
+    gallery_urls = await _proposal_gallery_images(intro_url)
+    if gallery_urls:
+        try:
+            gallery = [
+                InputMediaPhoto(
+                    media=url,
+                    caption="💍 Gathering courage for the proposal...\nAnime images via Waifu API." if index == 0 else None,
+                )
+                for index, url in enumerate(gallery_urls)
+            ]
+            processing_messages = await context.bot.send_media_group(
+                chat_id=update.effective_chat.id,
+                media=gallery,
+                reply_to_message_id=update.effective_message.message_id,
+            )
+            processing = processing_messages[0]
+        except Exception:
+            processing = await update.effective_message.reply_text(
+                "💍 Gathering courage for the proposal..."
+            )
+    else:
+        processing = await update.effective_message.reply_text(
+            "💍 Gathering courage for the proposal..."
+        )
+
     await asyncio.sleep(random.randint(3, 5))
     if random.uniform(0, 100) <= random.randint(35, 45):
         w = _random_waifu(["ChristmasArc", "RoyalArc", "NeonArc", "CelestialArc"])
         if w:
             storage.add_to_collection(uid, w["waifu_id"], "propose")
-            await processing.reply_photo(w["image_file_id"], caption=f"💖 {w['name']} has accepted your proposal!\n{_display(w)}")
+            await processing.reply_photo(
+                w["image_file_id"],
+                caption=f"💖 {w['name']} has accepted your proposal!\n{_display(w)}",
+            )
             return
+
     rejection = random.choice([
-        (18022, "You've been friend-zoned so hard, you're now the mayor of friend zone city! 🏙️"),
-        (17925, "Breaking news: local simp gets rejected so hard! 🥲🛏️")
+        "You've been friend-zoned so hard, you're now the mayor of Friend Zone City! 🏙️",
+        "Breaking news: local simp gets rejected so hard! 🥲",
     ])
-    try:
-        await context.bot.copy_message(
-            chat_id=update.effective_chat.id,
-            from_chat_id="@movieandweb_s_group",
-            message_id=rejection[0],
-            caption=rejection[1]
-        )
-    except Exception:
-        await processing.reply_text(rejection[1])
+    await processing.reply_text(rejection)
 
 
 async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -805,7 +884,7 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             else:
                 found = con.execute("SELECT * FROM user_profiles WHERE lower(username)=lower(?)", (search,)).fetchone()
         if not found:
-            await update.effective_message.reply_text("⚠️ User not found. User ko pehle bot start karna hoga.")
+            await update.effective_message.reply_text("⚠️ User not found. They must start the bot first.")
             return
         target_id = int(found["user_id"])
     bot_user_id = storage.ensure_bot_user_id(target_id)
@@ -1156,24 +1235,24 @@ async def f_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def gift_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     if not msg.reply_to_message or not msg.reply_to_message.from_user:
-        await msg.reply_text("Jis user ko gift karna hai uske message par reply karke /gift <waifu_id> likho.")
+        await msg.reply_text("Reply to the recipient's message and use /gift <waifu_id>.")
         return
     if not context.args:
         await msg.reply_text("Usage: /gift <waifu_id>")
         return
     giver, receiver = update.effective_user.id, msg.reply_to_message.from_user
     if receiver.is_bot or receiver.id == giver:
-        await msg.reply_text("Bot ya khud ko gift nahi kar sakte.")
+        await msg.reply_text("You cannot gift a character to the bot or to yourself.")
         return
     w = storage.owned_waifu(giver, context.args[0])
     if not w:
-        await msg.reply_text("Ye waifu tumhari collection mein nahi hai.")
+        await msg.reply_text("This character is not in your collection.")
         return
     if storage.owned_waifu(receiver.id, context.args[0]):
         await msg.reply_text("⚠️ Receiver already owns this waifu. Duplicate gifting is not allowed.")
         return
     token = storage.create_pending(giver, "gift", {"receiver_id": receiver.id, "waifu_id": w["waifu_id"], "receiver_name": receiver.full_name}, 60)
-    caption = f"🎁 GIFT CONFIRMATION\n\n{_display(w)}\n\nReceiver: {receiver.full_name}\nRequest 1 minute mein expire ho jayegi.\nGift confirm karna hai?"
+    caption = f"🎁 GIFT CONFIRMATION\n\n{_display(w)}\n\nReceiver: {receiver.full_name}\nThis request will expire in 1 minute.\nDo you want to confirm this gift?"
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Confirm", callback_data=f"giftok:{token}"),
         InlineKeyboardButton("❌ Cancel", callback_data=f"giftno:{token}")
@@ -1189,7 +1268,7 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     action, token = q.data.split(":")
     pending = storage.get_pending(token, q.from_user.id, "gift")
     if not pending:
-        await q.answer("Gift request expire ho gayi ya tumhari nahi hai.", show_alert=True)
+        await q.answer("This gift request has expired or does not belong to you.", show_alert=True)
         return
     import json
     data = json.loads(pending["payload"])
@@ -1199,7 +1278,7 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await _edit_photo_or_text(q, "The gift has been successfully cancelled.")
         return
     if not storage.owned_waifu(q.from_user.id, data["waifu_id"]):
-        await q.answer("Waifu ab tumhari collection mein nahi hai.", show_alert=True)
+        await q.answer("This character is no longer in your collection.", show_alert=True)
         return
     with storage.connect() as con:
         con.execute("BEGIN IMMEDIATE")
@@ -1214,7 +1293,7 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         if cur.rowcount != 1:
             con.rollback()
-            await q.answer("Gift process nahi ho saka.", show_alert=True)
+            await q.answer("The gift could not be completed.", show_alert=True)
             return
         con.execute(
             "INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)",
@@ -1227,7 +1306,7 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         con.commit()
     storage.finish_pending(token, "done")
     await q.answer("Gift successful!")
-    await _edit_photo_or_text(q, f"🎉 GIFT SUCCESSFUL!\n\nCharacter ID: {data['waifu_id']}\n{data['receiver_name']} ko successfully gift kar di gayi hai.")
+    await _edit_photo_or_text(q, f"🎉 GIFT SUCCESSFUL!\n\nCharacter ID: {data['waifu_id']}\nSuccessfully gifted to {data['receiver_name']}.")
     gifted = storage.get_waifu(data["waifu_id"])
     if gifted:
         try:
@@ -1250,7 +1329,7 @@ async def sell_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             if not 1 <= percent <= 100:
                 raise ValueError
         except ValueError:
-            await update.effective_message.reply_text("Sell percentage 1–100 ke darmiyan hona chahiye.")
+            await update.effective_message.reply_text("The sell percentage must be between 1 and 100.")
             return
         with storage.connect() as con:
             con.execute("INSERT INTO rarity_settings(rarity,sell_percent) VALUES (?,?) ON CONFLICT(rarity) DO UPDATE SET sell_percent=excluded.sell_percent", (rarity, percent))
@@ -1286,7 +1365,7 @@ async def sell_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if len(args) > 5:
         return
     if any(not storage.owned_waifu(uid, wid) for wid in args):
-        await update.effective_message.reply_text("❌ In IDs mein se koi waifu tumhari collection mein nahi.")
+        await update.effective_message.reply_text("❌ None of these IDs belong to your collection.")
         return
     day_start = int(datetime.now(ZoneInfo("Asia/Karachi")).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
     with storage.connect() as con:
@@ -1295,7 +1374,7 @@ async def sell_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             (uid, day_start)
         ).fetchone()["n"]
     if sold_today + len(args) > 5:
-        await update.effective_message.reply_text("Daily limit: maximum 5 waifus sell kar sakte ho.")
+        await update.effective_message.reply_text("Daily limit reached: you can sell a maximum of 5 characters.")
         return
     token = storage.create_pending(uid, "sell_waifus", {"ids": args}, 60)
     total = 0
@@ -1319,7 +1398,7 @@ async def sell_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     action, token = q.data.split(":")
     pending = storage.get_pending(token, q.from_user.id, "sell_waifus") or storage.get_pending(token, q.from_user.id, "sell_diamonds")
     if not pending:
-        await q.answer("Sell request expire ho gayi ya tumhari nahi hai.", show_alert=True)
+        await q.answer("This sale request has expired or does not belong to you.", show_alert=True)
         return
     import json
     data = json.loads(pending["payload"])
@@ -1395,7 +1474,7 @@ async def setprofile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             con.execute("INSERT INTO user_profiles(user_id,profile_photo,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET profile_photo=excluded.profile_photo,updated_at=excluded.updated_at", (uid, file_id, storage.now()))
         await msg.reply_text("💖 Profile photo updated.")
         return
-    await msg.reply_text("Usage: /setprofile <owned_waifu_id> ya kisi photo ko reply karke /setprofile.")
+    await msg.reply_text("Usage: /setprofile <owned_waifu_id>, or reply to a photo with /setprofile.")
 
 
 async def dupload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

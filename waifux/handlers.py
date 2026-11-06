@@ -93,6 +93,12 @@ def _install_runtime_roles(owner_id: int) -> None:
     def _is_owner(uid: int) -> bool:
         return int(uid) == owner_id
 
+    # Legacy role-management functions had hard-coded owner IDs.
+    legacy.is_sudo_owner = _is_owner
+    legacy.is_uploader_owner = _is_owner
+    legacy.SUDO_FILE = "data/sudo_users.json"
+    legacy.UPLOADER_FILE = "data/uploader_users.json"
+
     def _is_sudo(uid: int) -> bool:
         try:
             return int(uid) in {int(value) for value in legacy.load_sudo()}
@@ -224,6 +230,13 @@ def register_handlers(app: Application, owner_id: int) -> None:
     app.add_handler(MessageHandler(filters.COMMAND, waifu.command_guard), group=-1)
     for name, callback in command_map.items():
         app.add_handler(CommandHandler(name, callback))
+
+    async def unknown_command(update, context):
+        await update.effective_message.reply_text(
+            "This command is not available yet. Use /help to see available commands."
+        )
+
+    app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
     # Specific callback patterns prevent the old catch-all handler from
     # swallowing collection image callbacks or unrelated inline buttons.

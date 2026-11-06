@@ -17,7 +17,7 @@ async def trade_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     target = msg.reply_to_message.from_user if msg.reply_to_message else None
     if not target or target.is_bot or target.id == update.effective_user.id:
-        await msg.reply_text("Trade ke liye doosre user ke message par reply karo.")
+        await msg.reply_text("Reply to the other user's message to start a trade.")
         return
     if len(context.args) != 2 or not all(x.isdigit() for x in context.args):
         await msg.reply_text("Usage: reply to user message, then /trade <your_waifu_id> <their_waifu_id>")
@@ -26,10 +26,10 @@ async def trade_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     own = storage.owned_waifu(actor, context.args[0])
     theirs = storage.owned_waifu(target.id, context.args[1])
     if not own:
-        await msg.reply_text("Tumhari collection mein pehli waifu ID nahi mili.")
+        await msg.reply_text("The first character ID was not found in your collection.")
         return
     if not theirs:
-        await msg.reply_text("Target user ke collection mein doosri waifu ID nahi mili.")
+        await msg.reply_text("The second character ID was not found in the target user's collection.")
         return
     payload = {
         "initiator_id": actor, "target_id": target.id,
@@ -41,7 +41,7 @@ async def trade_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"🔁 TRADE REQUEST\n\nYou offer: {own['name']} ({own['waifu_id']})\n"
         f"You receive: {theirs['name']} ({theirs['waifu_id']})\n"
         f"Trade partner: {target.full_name}\n\n"
-        "Trade tabhi complete hogi jab doosra user accept kare.",
+        "The trade will be completed only after the other user accepts.",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ Accept Trade", callback_data=f"trdaccept:{token}"),
             InlineKeyboardButton("❌ Cancel", callback_data=f"trdcancel:{token}")
@@ -58,15 +58,15 @@ async def trade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             (token, storage.now())
         ).fetchone()
         if not row:
-            await q.answer("Trade request expire ho gayi.", show_alert=True)
+            await q.answer("This trade request has expired.", show_alert=True)
             return
         data = json.loads(row["payload"])
         actor, target = int(data["initiator_id"]), int(data["target_id"])
         if q.from_user.id not in (actor, target):
-            await q.answer("Ye trade tumhare liye nahi hai.", show_alert=True)
+            await q.answer("This trade request is not addressed to you.", show_alert=True)
             return
         if action == "trdaccept" and q.from_user.id != target:
-            await q.answer("Trade partner hi accept kar sakta hai.", show_alert=True)
+            await q.answer("Only the trade partner can accept this request.", show_alert=True)
             return
         if action == "trdcancel":
             con.execute("UPDATE pending_actions SET status='cancelled' WHERE token=?", (token,))
@@ -90,7 +90,7 @@ async def trade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         ).fetchone()
         if not own_a or not own_b:
             con.rollback()
-            await q.answer("Collection update ho chuki hai; trade complete nahi ho sakti.", show_alert=True)
+            await q.answer("The collection has changed; this trade can no longer be completed.", show_alert=True)
             return
         con.execute("DELETE FROM user_waifus WHERE id=?", (own_a["id"],))
         con.execute("DELETE FROM user_waifus WHERE id=?", (own_b["id"],))
@@ -112,7 +112,7 @@ async def trade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
         con.commit()
     await q.answer("Trade successful!")
-    await q.edit_message_text("🎉 TRADE COMPLETED! Donon users ki collections update ho gayi hain.")
+    await q.edit_message_text("🎉 TRADE COMPLETED! Both users' collections have been updated.")
     for recipient, wid in ((actor, data["target_waifu"]), (target, data["initiator_waifu"])):
         w = storage.get_waifu(wid)
         if w:
@@ -120,7 +120,7 @@ async def trade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 if w["image_file_id"]:
                     await context.bot.send_photo(
                         recipient, w["image_file_id"],
-                        caption=f"🔁 Trade successful! Ye waifu tumhari /collection mein add ho gayi.\n{_display(w)}"
+                        caption=f"🔁 Trade successful! This character has been added to your /collection.\n{_display(w)}"
                     )
                 else:
                     await context.bot.send_message(recipient, f"🔁 Trade successful!\n{_display(w)}")
@@ -190,7 +190,7 @@ async def give_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await msg.reply_text("⚠️ User not found. Reply to their message or use a username/user ID already known to the bot.")
         return
     if target_id == uid and not _owner(uid):
-        await msg.reply_text("🚫 Sudo/uploader apne aap ko waifu gift nahi kar sakte.")
+        await msg.reply_text("🚫 SUDO users and Uploaders cannot gift characters to themselves.")
         return
     if storage.owned_waifu(target_id, context.args[0]):
         await msg.reply_text("⚠️ This user already owns this waifu. Duplicate gifting is not allowed.")
@@ -218,7 +218,7 @@ async def give_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     action, token = q.data.split(":")
     pending = storage.get_pending(token, q.from_user.id, "admin_gift")
     if not pending:
-        await q.answer("Request expire ho gayi.", show_alert=True)
+        await q.answer("This request has expired.", show_alert=True)
         return
     data = json.loads(pending["payload"])
     if action == "givno":

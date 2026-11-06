@@ -143,7 +143,7 @@ async def filter_add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     keyword, response = (part.strip() for part in raw.split("|", 1))
     if not keyword or not response:
-        await update.effective_message.reply_text("Keyword aur response dono required hain.")
+        await update.effective_message.reply_text("Both a keyword and a response are required.")
         return
     with storage.connect() as con:
         con.execute(
