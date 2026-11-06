@@ -89,13 +89,15 @@ async def help_callback(update, context) -> None:
 def _install_runtime_roles(owner_id: int) -> None:
     """Replace stale hard-coded role IDs with the persistent role lists."""
     legacy.OWNER_ID = owner_id
+
+    def _is_owner(uid: int) -> bool:
+        return int(uid) == owner_id
+
+    # Legacy role-management functions had hard-coded owner IDs.
     legacy.is_sudo_owner = _is_owner
     legacy.is_uploader_owner = _is_owner
     legacy.SUDO_FILE = "data/sudo_users.json"
     legacy.UPLOADER_FILE = "data/uploader_users.json"
-
-    def _is_owner(uid: int) -> bool:
-        return int(uid) == owner_id
 
     def _is_sudo(uid: int) -> bool:
         try:
