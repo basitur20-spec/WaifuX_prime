@@ -1014,6 +1014,9 @@ async def gift_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not w:
         await msg.reply_text("Ye waifu tumhari collection mein nahi hai.")
         return
+    if storage.owned_waifu(receiver.id, context.args[0]):
+        await msg.reply_text("⚠️ Receiver already owns this waifu. Duplicate gifting is not allowed.")
+        return
     token = storage.create_pending(giver, "gift", {"receiver_id": receiver.id, "waifu_id": w["waifu_id"], "receiver_name": receiver.full_name}, 60)
     await msg.reply_photo(w["image_file_id"], caption=f"🎁 GIFT CONFIRMATION\n\n{_display(w)}\n\nReceiver: {receiver.full_name}\nRequest 1 minute mein expire ho jayegi.\nGift confirm karna hai?",
         reply_markup=InlineKeyboardMarkup([[
