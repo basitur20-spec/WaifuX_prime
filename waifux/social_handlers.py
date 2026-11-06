@@ -112,10 +112,13 @@ async def trade_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         w = storage.get_waifu(wid)
         if w:
             try:
-                await context.bot.send_photo(
-                    recipient, w["image_file_id"],
-                    caption=f"🔁 Trade successful! Ye waifu tumhari /collection mein add ho gayi.\n{_display(w)}"
-                )
+                if w["image_file_id"]:
+                    await context.bot.send_photo(
+                        recipient, w["image_file_id"],
+                        caption=f"🔁 Trade successful! Ye waifu tumhari /collection mein add ho gayi.\n{_display(w)}"
+                    )
+                else:
+                    await context.bot.send_message(recipient, f"🔁 Trade successful!\n{_display(w)}")
             except Exception:
                 pass
 
@@ -242,9 +245,12 @@ async def give_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await q.answer("Gift sent.")
     await _edit_photo_or_text(q, "🎉 Gift successfully sent.")
     try:
-        await context.bot.send_photo(
-            data["target_id"], w["image_file_id"],
-            caption=f"🎁 You received a waifu gift!\n{_display(w)}\nAdded to your /collection."
-        )
+        if w["image_file_id"]:
+            await context.bot.send_photo(
+                data["target_id"], w["image_file_id"],
+                caption=f"🎁 You received a waifu gift!\n{_display(w)}\nAdded to your /collection."
+            )
+        else:
+            await context.bot.send_message(data["target_id"], f"🎁 You received a waifu gift!\n{_display(w)}\nAdded to your /collection.")
     except Exception:
         pass
