@@ -44,6 +44,6 @@ def test_command_registry_has_no_duplicate_names():
 def test_redeem_toggles_are_not_duplicate_redeem_commands():
     source = Path("waifux/handlers.py").read_text(encoding="utf-8")
     assert '"redeem": redeem_command' in source
-    assert '"dredeem": legacy.dredeem_cmd' in source
+    assert '"dredeem": dredeem_command' in source
     assert '"redeemtoggle": legacy.redeem_toggle' in source
     assert '"dredeemtoggle": legacy.dredeem_toggle' in source
