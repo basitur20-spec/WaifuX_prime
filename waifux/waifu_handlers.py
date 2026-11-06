@@ -128,7 +128,7 @@ def _random_waifu(rarities: list[str] | None = None, respect_spawn_settings: boo
 def _parse_upload_details(raw: str) -> dict:
     data = {}
     for line in raw.splitlines():
-        match = re.match(r"\s*(name|rarity|anime|price|id)\s*[:=]?\s+(.+?)\s*$", line, re.I)
+        match = re.match(r"\s*(name|rarity|anime|price|id|aliases)\s*[:=]?\s+(.+?)\s*$", line, re.I)
         if match:
             data[match.group(1).lower()] = match.group(2).strip()
     # Also accept the documented three-line plain format.
@@ -179,7 +179,7 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             wid = random.choice(free)
         if len(wid) != 4 or not wid.isdigit():
             raise ValueError("ID exactly 4 digits ka hona chahiye.")
-        storage.add_waifu(wid, name, anime, rarity, price, photo.file_id, uid)
+        storage.add_waifu(wid, name, anime, rarity, price, photo.file_id, uid, [a.strip() for a in data.get('aliases', '').split(',') if a.strip()])
         reward = int(price * 0.03)
         if reward:
             storage.change_balance(uid, cash_delta=reward)
