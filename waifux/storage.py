@@ -78,6 +78,7 @@ def init_db() -> None:
             user_id INTEGER PRIMARY KEY,
             username TEXT,
             first_name TEXT,
+            bot_user_id TEXT UNIQUE,
             profile_photo TEXT,
             profile_waifu_id TEXT,
             display_mode TEXT NOT NULL DEFAULT 'default',
@@ -106,6 +107,16 @@ def init_db() -> None:
             rarity TEXT PRIMARY KEY,
             spawn_enabled INTEGER NOT NULL DEFAULT 1,
             sell_percent REAL NOT NULL DEFAULT 50
+        );
+        CREATE TABLE IF NOT EXISTS market_rarity_settings (
+            rarity TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE IF NOT EXISTS marketplace_history (
+            user_id INTEGER NOT NULL,
+            waifu_id TEXT NOT NULL REFERENCES waifus(waifu_id),
+            last_offered_at INTEGER NOT NULL,
+            PRIMARY KEY(user_id,waifu_id)
         );
         CREATE TABLE IF NOT EXISTS market_refreshes (
             user_id INTEGER NOT NULL,
@@ -215,6 +226,9 @@ def init_db() -> None:
             con.execute("ALTER TABLE user_profiles ADD COLUMN display_mode TEXT NOT NULL DEFAULT 'default'")
         if "display_value" not in profile_columns:
             con.execute("ALTER TABLE user_profiles ADD COLUMN display_value TEXT")
+        if "bot_user_id" not in profile_columns:
+            con.execute("ALTER TABLE user_profiles ADD COLUMN bot_user_id TEXT")
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_bot_user_id ON user_profiles(bot_user_id)")
 
 
 def now() -> int:
