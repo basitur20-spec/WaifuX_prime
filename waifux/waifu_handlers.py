@@ -919,6 +919,13 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         con.commit()
     await q.answer("Gift successful!")
     await q.edit_message_caption(f"🎉 GIFT SUCCESSFUL!\n\nCharacter ID: {data['waifu_id']}\n{data['receiver_name']} ko successfully gift kar di gayi hai.")
+    gifted = storage.get_waifu(data["waifu_id"])
+    if gifted:
+        try:
+            await context.bot.send_photo(data["receiver_id"], gifted["image_file_id"],
+                caption=f"🎁 YOU RECEIVED A WAIFU!\n{_display(gifted)}\nAdded to your /collection.")
+        except Exception:
+            pass
 
 
 async def sell_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
