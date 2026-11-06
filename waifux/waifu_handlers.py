@@ -273,12 +273,30 @@ async def _send_collection(message, owner_id: int, page: int, rows=None, viewer_
     await message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(buttons))
 
 
+def _collection_image_keyboard(owner_id: int, viewer_id: int, page: int, count: int):
+    pages = max(1, (count + 9) // 10)
+    buttons = []
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀ Prev", callback_data=f"colimg:{owner_id}:{viewer_id}:{page-1}"))
+    nav.append(InlineKeyboardButton(f"📑 {page+1}/{pages}", callback_data="colimgnoop"))
+    if page + 1 < pages:
+        nav.append(InlineKeyboardButton("Next ▶", callback_data=f"colimg:{owner_id}:{viewer_id}:{page+1}"))
+    buttons.append(nav)
+    if owner_id == viewer_id:
+        buttons.append([InlineKeyboardButton("❌ Close", callback_data=f"colimgclose:{owner_id}:{viewer_id}")])
+    return InlineKeyboardMarkup(buttons)
+
+
 async def collection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     parts = q.data.split(":")
     action = parts[0]
     owner_id = int(parts[1])
-    if action == "colclose":
+    if action == "colimgnoop":
+        await q.answer()
+        return
+    if action == "colclose" or action == "colimgclose":
         viewer_id = int(parts[2])
         if q.from_user.id != viewer_id:
             await q.answer("This control is not yours.", show_alert=True)
@@ -291,9 +309,15 @@ async def collection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         if q.from_user.id != viewer_id:
             await q.answer("This image view is not yours.", show_alert=True)
             return
-        await q.answer()
         rows = _collection_for_user(owner_id)
         images = [w for w in rows if w["image_file_id"]]
+        pages = max(1, (len(images) + 9) // 10)
+        page = max(0, min(page, pages - 1))
+        await q.answer()
+        await q.edit_message_text(
+            f"🖼️ WAIFUS | Page {page+1}/{pages}",
+            reply_markup=_collection_image_keyboard(owner_id, viewer_id, page, len(images))
+        )
         for w in images[page * 10:(page + 1) * 10]:
             await q.message.reply_photo(w["image_file_id"], caption=f"{w['name']} | {w['waifu_id']}")
         return
