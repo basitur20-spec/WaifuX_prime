@@ -23,6 +23,7 @@ async def track_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             (user.id, user.username, user.first_name, storage.now())
         )
         con.execute("INSERT OR IGNORE INTO user_balance(user_id) VALUES (?)", (user.id,))
+    storage.ensure_bot_user_id(user.id)
 
 
 async def gclaim_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
