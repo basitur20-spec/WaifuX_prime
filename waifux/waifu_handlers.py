@@ -982,7 +982,10 @@ async def sell_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     total = 0
     for wid in args:
         w = storage.owned_waifu(uid, wid)
-        total += int(w["price"] * 0.5)
+        with storage.connect() as con:
+            rate = con.execute("SELECT sell_percent FROM rarity_settings WHERE rarity=?", (w["rarity"],)).fetchone()
+        percent = float(rate["sell_percent"]) if rate else 50.0
+        total += int(w["price"] * percent / 100)
     await update.effective_message.reply_text(
         f"⚠️ Sell confirmation\nWaifus: {', '.join(args)}\nEstimated cash: {_fmt(total)}\nConfirm?",
         reply_markup=InlineKeyboardMarkup([[
