@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -12,6 +14,17 @@ from telegram.ext import (
 from legacy import partial_commands as legacy
 
 logger = logging.getLogger(__name__)
+
+
+async def help_command(update, context) -> None:
+    """Show the available command groups from the preserved feature set."""
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Commands", callback_data="HELP_COMMANDS_1"),
+         InlineKeyboardButton("Games", callback_data="HELP_GAMES")]
+    ])
+    await update.message.reply_text(
+        "WaifuX Prime Help\nChoose a category below.", reply_markup=keyboard
+    )
 
 
 def _install_runtime_roles(owner_id: int) -> None:
@@ -59,7 +72,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
 
     command_map = {
         "start": legacy.start,
-        "help": legacy.help_menu,
+        "help": help_command,
         "balance": legacy.balance_cmd,
         "explore": legacy.explore_cmd,
         "bonus": legacy.bonus_cmd,
