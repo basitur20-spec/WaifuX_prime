@@ -176,6 +176,11 @@ async def marketplace_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     elif action == "buy":
         with storage.connect() as con:
             con.execute("BEGIN IMMEDIATE")
+            daily = con.execute("SELECT purchases FROM market_daily_purchases WHERE user_id=? AND day_key=?", (uid, day)).fetchone()
+            if daily and daily["purchases"] >= 2:
+                con.rollback()
+                await q.answer("Daily limit reached: you can buy only 2 waifus per day.", show_alert=True)
+                return
             offer = con.execute(
                 "SELECT * FROM marketplace_slots WHERE user_id=? AND slot=? AND day_key=?",
                 (uid, slot, day)
@@ -199,6 +204,7 @@ async def marketplace_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             con.execute("UPDATE user_balance SET cash=cash-? WHERE user_id=?", (price, uid))
             con.execute("INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)", (uid, w["waifu_id"], storage.now(), "marketplace"))
             con.execute("UPDATE marketplace_slots SET purchased=1 WHERE user_id=? AND slot=? AND day_key=?", (uid, slot, day))
+            con.execute("INSERT INTO market_daily_purchases(user_id,day_key,purchases) VALUES (?,?,1) ON CONFLICT(user_id,day_key) DO UPDATE SET purchases=purchases+1", (uid, day))
             con.execute("INSERT INTO transactions(tx_id,actor_id,action,amount,waifu_id,details,created_at) VALUES (?,?,?,?,?,?,?)",
                         (__import__("uuid").uuid4().hex, uid, "marketplace_buy", price, w["waifu_id"], json.dumps({"discount": offer["discount_percent"]}), storage.now()))
             con.commit()
