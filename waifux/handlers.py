@@ -23,14 +23,62 @@ from . import event_handlers as events
 logger = logging.getLogger(__name__)
 
 
+HELP_TEXT = (
+    "🌸 WAIFUX PRIME — COMMAND GUIDE 🌸\n\n"
+    "📚 COLLECTION & PROFILE\n"
+    "/collection [@username|bot_id] — view collection\n"
+    "/fav <waifu_id> — set favourite\n"
+    "/dmode — choose collection display mode\n"
+    "/setprofile <waifu_id> — set profile waifu; reply to a photo to set profile photo\n"
+    "/profile [@username|bot_id] — view profile\n\n"
+    "🎭 CHARACTER CATALOGUE\n"
+    "/upload — upload a photo with Name, Rarity, Anime\n"
+    "/dupload <waifu_id> — delete a character (uploader)\n"
+    "/f <waifu_id> — character information\n"
+    "/find <waifu_id> — global owners and picked count\n"
+    "/dfind <name> — search catalogue by name/anime\n\n"
+    "🎮 GAMEPLAY\n"
+    "/hunt <name> — claim the group spawn\n"
+    "/waifu — claim daily waifu (12h cooldown)\n"
+    "/marriage — 35% chance for Shiny/Ultimate reward\n"
+    "/propose — spend 30,000 Cash for a proposal\n\n"
+    "💰 ECONOMY & TRANSFERS\n"
+    "/balance, /explore, /bonus, /pay — cash economy\n"
+    "/sell <id> [ids...] — sell up to 5 waifus/day\n"
+    "/sell diamonds <amount> — exchange diamonds for Cash\n"
+    "/gift <waifu_id> — reply to a user to gift\n"
+    "/trade <your_id> <their_id> — reply to a user to trade\n\n"
+    "🏪 MARKETPLACE & AUCTIONS\n"
+    "/marketplace — daily offers, two purchases/day\n"
+    "/auction <waifu_id> <starting_bid> [hours] — list auction (staff)\n"
+    "/bid <amount> — submit a bid after opening Auction\n"
+    "/auction users — current bidders (staff)\n\n"
+    "👥 GROUP CONTROLS\n"
+    "/spawn <rarity> on/off — toggle hunt rarity (owner)\n"
+    "/changetime <2-120 minutes> — set group spawn interval (sudo)\n"
+    "/filter <keyword> | <response>, /filters, /delfilter, /delall\n\n"
+    "👑 OWNER / STAFF\n"
+    "/give <waifu_id> <username|bot_id> — grant waifu\n"
+    "/gclaim <amount|amount d|waifu id> — create one-time reward\n"
+    "/claim — claim active reward once\n"
+    "/marketspawn <rarity> on/off — marketplace rarity control (owner)\n"
+    "/stop <command>, /run <command|all>, /send <message>\n"
+    "/addsudo, /rsudo, /sudolist, /adduploader, /ruploader\n\n"
+    "🎲 OTHER GAMES\n"
+    "/roll, /darts, /goal, /mines, /endmines"
+)
+
+
 async def help_command(update, context) -> None:
-    """Show the available command groups from the preserved feature set."""
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Commands", callback_data="HELP_COMMANDS_1"),
-         InlineKeyboardButton("Games", callback_data="HELP_GAMES")]
-    ])
-    await update.message.reply_text(
-        "WaifuX Prime Help\nChoose a category below.", reply_markup=keyboard
+    await update.effective_message.reply_text(HELP_TEXT)
+
+
+async def help_callback(update, context) -> None:
+    q = update.callback_query
+    await q.answer()
+    await q.edit_message_text(
+        HELP_TEXT,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="HELP_BACK_TO_START")]])
     )
 
 
@@ -182,10 +230,11 @@ def register_handlers(app: Application, owner_id: int) -> None:
         (r"^(?:cw_(?:next|prev)_\d+_\d+|cw_close)$", legacy.collection_callback),
         (r"^SUDO_GUIDE$", legacy.sudo_guide_callback),
         (r"^UPLOADER_GUIDE$", legacy.uploader_guide_callback),
-        (r"^(?:OPEN_HELP|HELP_COMMANDS_1|HELP_COMMANDS_2|HELP_GAMES|HELP_BACK_TO_START)$", legacy.callback_router),
+        (r"^(?:HELP_COMMANDS_1|HELP_COMMANDS_2|HELP_GAMES|HELP_BACK_TO_START)$", legacy.callback_router),
     ]
     for pattern, callback in callback_map:
         app.add_handler(CallbackQueryHandler(callback, pattern=pattern))
+    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^OPEN_HELP$"))
 
     app.add_handler(CallbackQueryHandler(waifu.collection_callback, pattern=r"^(?:col|colimg|colclose|colimgclose):|^colimgnoop$"))
     app.add_handler(CallbackQueryHandler(waifu.dmode_callback, pattern=r"^(?:dmode:|dmrarity:|dmchoices:|dmback:|dmset:|dmpick:|dmclose:|dmnoop$)"))
