@@ -252,7 +252,13 @@ async def _send_collection(message, owner_id: int, page: int, rows=None, viewer_
     page = max(0, min(page, pages - 1))
     chunk = rows[page * page_size:(page + 1) * page_size]
     viewer_id = owner_id if viewer_id is None else viewer_id
-    title = "YOUR WAIFU COLLECTION" if owner_id == viewer_id else "WAIFU COLLECTION (VIEW ONLY)"
+    if owner_id == viewer_id:
+        title = "YOUR WAIFU COLLECTION"
+    else:
+        with storage.connect() as con:
+            profile = con.execute("SELECT username,first_name,bot_user_id FROM user_profiles WHERE user_id=?", (owner_id,)).fetchone()
+        owner_name = f"@{profile['username']}" if profile and profile["username"] else (profile["first_name"] if profile else f"User {storage.ensure_bot_user_id(owner_id)}")
+        title = f"{owner_name}'S WAIFU COLLECTION (VIEW ONLY)"
     lines = [f"📚 {title}", f"Page {page + 1}/{pages}", ""]
     last_anime = None
     for w in chunk:
