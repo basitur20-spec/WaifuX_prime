@@ -371,31 +371,73 @@ async def bid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     amount = int(context.args[0])
     with storage.connect() as con:
-        con.execute("BEGIN IMMEDIATE")
         auction = con.execute("SELECT * FROM auctions WHERE auction_id=? AND status='active' AND ends_at>?", (auction_id, storage.now())).fetchone()
         if not auction:
-            con.rollback()
             await update.effective_message.reply_text("AUCTION IS NOT AVAILABLE.")
             return
         if int(auction["seller_id"]) == uid:
-            con.rollback()
             await update.effective_message.reply_text("You cannot bid on your own auction.")
             return
         current = max(int(auction["current_bid"]), int(auction["starting_bid"]))
         if amount <= current:
-            con.rollback()
             await update.effective_message.reply_text(f"Bid current bid {_fmt(current)} se zyada honi chahiye.")
             return
-        con.execute("INSERT OR IGNORE INTO user_balance(user_id) VALUES (?)", (uid,))
-        cash = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (uid,)).fetchone()["cash"]
+        cash, _ = storage.get_balance(uid)
         if cash < amount:
-            con.rollback()
             await update.effective_message.reply_text("❌ Insufficient balance for this bid.")
             return
-        con.execute("UPDATE auctions SET current_bid=?,highest_bidder=? WHERE auction_id=?", (amount, uid, auction_id))
-        con.execute("INSERT INTO auction_bids(auction_id,bidder_id,amount,created_at) VALUES (?,?,?,?)", (auction_id, uid, amount, storage.now()))
+    token = storage.create_pending(uid, "auction_bid", {"auction_id": auction_id, "amount": amount}, 60)
+    await update.effective_message.reply_text(
+        f"🔨 BID CONFIRMATION\n\nYour bid: {_fmt(amount)} Cash\nCurrent bid: {_fmt(current)} Cash\n"
+        "Cash abhi deduct nahi hoga. Auction jeetne par amount charge hoga. Confirm?",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Confirm Bid", callback_data=f"bidok:{token}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"bidno:{token}")
+        ]])
+    )
+
+
+async def bid_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    action, token = q.data.split(":")
+    pending = storage.get_pending(token, q.from_user.id, "auction_bid")
+    if not pending:
+        await q.answer("Bid request expired.", show_alert=True)
+        return
+    data = json.loads(pending["payload"])
+    if action == "bidno":
+        storage.finish_pending(token, "cancelled")
+        await q.answer("Bid cancelled.")
+        await q.edit_message_text("❌ Bid cancelled. No cash was charged.")
+        return
+    with storage.connect() as con:
+        con.execute("BEGIN IMMEDIATE")
+        auction = con.execute(
+            "SELECT * FROM auctions WHERE auction_id=? AND status='active' AND ends_at>?",
+            (int(data["auction_id"]), storage.now())
+        ).fetchone()
+        if not auction or int(auction["seller_id"]) == q.from_user.id:
+            con.rollback()
+            await q.answer("Auction is no longer available.", show_alert=True)
+            return
+        amount = int(data["amount"])
+        current = max(int(auction["current_bid"]), int(auction["starting_bid"]))
+        if amount <= current:
+            con.rollback()
+            await q.answer(f"Someone has already bid {_fmt(current)}. Submit a higher bid.", show_alert=True)
+            return
+        con.execute("INSERT OR IGNORE INTO user_balance(user_id) VALUES (?)", (q.from_user.id,))
+        bal = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (q.from_user.id,)).fetchone()["cash"]
+        if bal < amount:
+            con.rollback()
+            await q.answer("Insufficient balance.", show_alert=True)
+            return
+        con.execute("UPDATE auctions SET current_bid=?,highest_bidder=? WHERE auction_id=?", (amount, q.from_user.id, int(data["auction_id"])))
+        con.execute("INSERT INTO auction_bids(auction_id,bidder_id,amount,created_at) VALUES (?,?,?,?)", (int(data["auction_id"]), q.from_user.id, amount, storage.now()))
+        con.execute("UPDATE pending_actions SET status='done' WHERE token=?", (token,))
         con.commit()
-    await update.effective_message.reply_text(f"✅ Bid recorded: {_fmt(amount)} Cash. You are currently the highest bidder.")
+    await q.answer("Bid confirmed!")
+    await q.edit_message_text(f"✅ BID CONFIRMED\nYour bid: {_fmt(amount)} Cash\nYou are now the highest bidder.")
 
 
 async def settle_auctions(context: ContextTypes.DEFAULT_TYPE) -> None:
