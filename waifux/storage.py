@@ -542,7 +542,6 @@ def migrate_legacy_data() -> None:
 
 def ensure_bot_user_id(user_id: int) -> str:
     """Assign a stable, unique 11-digit public ID to a Telegram user."""
-    init_db()
     with connect() as con:
         con.execute("INSERT OR IGNORE INTO user_profiles(user_id,updated_at) VALUES (?,?)", (int(user_id), now()))
         row = con.execute("SELECT bot_user_id FROM user_profiles WHERE user_id=?", (int(user_id),)).fetchone()
