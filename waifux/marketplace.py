@@ -10,7 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import ContextTypes
 
 from . import storage
-from .waifu_handlers import RARITIES, RARITY_ORDER, _display, _fmt, _owner, _sudo
+from .waifu_handlers import RARITIES, RARITY_ORDER, _display, _fmt, _owner, _sudo, _rarity_name
 
 DISCOUNTS = {
     "ChibiArc": (6, 11), "WinterArc": (5, 10), "RoyalArc": (6, 15),
@@ -438,3 +438,23 @@ async def settle_auctions(context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             # No valid funded bid remained at settlement time.
             pass
+
+
+
+async def marketspawn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _owner(update.effective_user.id):
+        return
+    if len(context.args) != 2:
+        await update.effective_message.reply_text("Usage: /marketspawn <rarity> on/off")
+        return
+    rarity = _rarity_name(context.args[0])
+    status = context.args[1].lower()
+    if rarity not in COMMON_POOL + RARE_POOL or status not in {"on", "off"}:
+        await update.effective_message.reply_text("Marketplace rarity ya on/off value sahi nahi.")
+        return
+    with storage.connect() as con:
+        con.execute(
+            "INSERT INTO market_rarity_settings(rarity,enabled) VALUES (?,?) ON CONFLICT(rarity) DO UPDATE SET enabled=excluded.enabled",
+            (rarity, int(status == "on"))
+        )
+    await update.effective_message.reply_text(f"🏪 Marketplace {rarity} offers {status.upper()}.")
