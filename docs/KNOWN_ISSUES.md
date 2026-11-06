@@ -4,7 +4,7 @@ These items must be resolved before calling the bot production-ready:
 
 1. The supplied source defines several functions more than once. Python keeps the last definition, which can silently change behavior.
 2. The original `main()` has duplicate registrations for `/balance`, `/explore`, `/redeem`, and `/dredeem`. The new entry point avoids duplicate registrations and assigns owner toggles to `/redeemtoggle` and `/dredeemtoggle`.
-3. The source defines `add_waifu_to_collection` twice with incompatible signatures. The `/dredeem` path currently calls the two-argument form after the seven-argument SQLite function has replaced it. This requires a deliberate collection/data migration before that feature can be considered fixed.
+3. The duplicate collection-function signature collision has been corrected: code redemption now writes IDs through a dedicated JSON helper, and the collection viewer includes those IDs. Until a character catalogue is connected, redeemed entries display placeholder metadata and have no image.
 4. Character commands referenced by help text (including `/hunt`, `/waifu`, `/fav`, `/marriage`, `/propose`, and catalog/upload operations) are not implemented in this supplied source file. They must be integrated from the user's actual code/prompts.
 5. Economy, bonus, payment, and game flows need behavioral tests with a disposable database; syntax checks alone do not validate balance correctness or concurrency.
 6. SQLite writes are synchronous inside async Telegram handlers. Move persistence calls behind a service/repository layer and consider an async DB strategy before high-load deployment.
