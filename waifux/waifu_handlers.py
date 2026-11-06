@@ -915,8 +915,8 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     import json
     data = json.loads(pending["payload"])
-    storage.finish_pending(token, "cancelled" if action == "giftno" else "done")
     if action == "giftno":
+        storage.finish_pending(token, "cancelled")
         await q.answer("Gift cancelled.")
         await q.edit_message_caption("The gift has been successfully cancelled.")
         return
@@ -942,6 +942,7 @@ async def gift_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             (__import__("uuid").uuid4().hex, q.from_user.id, data["receiver_id"], "gift", data["waifu_id"], storage.now())
         )
         con.commit()
+    storage.finish_pending(token, "done")
     await q.answer("Gift successful!")
     await q.edit_message_caption(f"🎉 GIFT SUCCESSFUL!\n\nCharacter ID: {data['waifu_id']}\n{data['receiver_name']} ko successfully gift kar di gayi hai.")
     gifted = storage.get_waifu(data["waifu_id"])
