@@ -174,7 +174,7 @@ async def marketplace_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     offer = offers[0]
     w = storage.get_waifu(offer["waifu_id"])
     await update.effective_message.reply_photo(
-        w["image_file_id"], caption=_market_text(uid, 0, offer),
+        w["image_file_id"], caption=_market_text(uid, 0, offer), has_spoiler=True,
         reply_markup=_market_keyboard(uid, 0, offer)
     )
 
@@ -251,7 +251,7 @@ async def marketplace_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     w = storage.get_waifu(offer["waifu_id"])
     await q.answer()
     await q.edit_message_media(
-        media=InputMediaPhoto(media=w["image_file_id"], caption=_market_text(uid, slot, offer)),
+        media=InputMediaPhoto(media=w["image_file_id"], caption=_market_text(uid, slot, offer), has_spoiler=True),
         reply_markup=_market_keyboard(uid, slot, offer)
     )
 
@@ -270,12 +270,13 @@ async def auction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if args[0].lower() == "users":
         with storage.connect() as con:
             rows = con.execute(
-                """SELECT b.bidder_id,b.amount,b.created_at FROM auction_bids b
+                """SELECT b.bidder_id,b.amount,b.created_at,up.username,up.bot_user_id FROM auction_bids b
                 JOIN auctions a ON a.auction_id=b.auction_id
                 JOIN (SELECT auction_id,bidder_id,MAX(amount) AS max_amount
                       FROM auction_bids GROUP BY auction_id,bidder_id) latest
                   ON latest.auction_id=b.auction_id AND latest.bidder_id=b.bidder_id
                  AND latest.max_amount=b.amount
+                LEFT JOIN user_profiles up ON up.user_id=b.bidder_id
                 WHERE a.status='active'
                 ORDER BY b.amount DESC,b.created_at ASC"""
             ).fetchall()
@@ -284,12 +285,12 @@ async def auction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         lines = ["🔨 AUCTION BIDDERS (highest first)"]
         for i, row in enumerate(rows, 1):
-            try:
-                user = await context.bot.get_chat(row["bidder_id"])
-                name = f"@{user.username}" if user.username else user.full_name
-            except Exception:
-                name = f"User {row['bidder_id']}"
-            lines.append(f"{i}. {name} | ID: {row['bidder_id']} | {_fmt(row['amount'])} Cash")
+            if row["username"]:
+                name = f"@{row['username']}"
+            else:
+                name = f"User {row['bot_user_id'] or storage.ensure_bot_user_id(row['bidder_id'])}"
+            public_id = row["bot_user_id"] or storage.ensure_bot_user_id(row["bidder_id"])
+            lines.append(f"{i}. {name} | ID: {public_id} | {_fmt(row['amount'])} Cash")
         await update.effective_message.reply_text("\n".join(lines))
         return
     if len(args) < 2 or not args[0].isdigit() or not args[1].isdigit():
