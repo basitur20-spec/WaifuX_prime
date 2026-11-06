@@ -770,6 +770,28 @@ async def find_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await q.edit_message_caption(caption=caption, reply_markup=_find_keyboard(q.from_user.id, wid, page, pages))
 
 
+def _dfind_page_text(rows, page: int):
+    selected = rows[page * 15:(page + 1) * 15]
+    lines = ["🔎 WAIFU SEARCH RESULTS", f"Page {page+1}/{max(1,(len(rows)+14)//15)}"]
+    for rarity in RARITY_ORDER:
+        group = [w for w in selected if w["rarity"] == rarity]
+        if group:
+            lines.append(f"\n{RARITIES[rarity][0]} {rarity}")
+            lines.extend(f"🆔 {w['waifu_id']} | {w['name']} — {w['anime']}" for w in group)
+    return "\n".join(lines)
+
+
+def _dfind_keyboard(uid: int, token: str, page: int, count: int):
+    pages = max(1, (count + 14) // 15)
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅ Back Page", callback_data=f"dfind:{uid}:{token}:{page-1}"))
+    nav.append(InlineKeyboardButton(f"📑 {page+1}/{pages}", callback_data="dfindnoop"))
+    if page + 1 < pages:
+        nav.append(InlineKeyboardButton("Next ➡", callback_data=f"dfind:{uid}:{token}:{page+1}"))
+    return InlineKeyboardMarkup([nav, [InlineKeyboardButton("🗑 Discard", callback_data=f"dfinddel:{uid}:{token}")]])
+
+
 async def dfind_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
         await update.effective_message.reply_text("Usage: /dfind <character name>")
@@ -779,13 +801,41 @@ async def dfind_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not matches:
         await update.effective_message.reply_text("No uploaded waifus match that name.")
         return
-    lines = ["🔎 SEARCH RESULTS"]
-    for rarity in RARITY_ORDER:
-        group = [w for w in matches if w["rarity"] == rarity]
-        if group:
-            lines.append(f"\n{RARITIES[rarity][0]} {rarity}")
-            lines.extend(f"🆔 {w['waifu_id']} | {w['name']} — {w['anime']}" for w in group[:15])
-    await update.effective_message.reply_text("\n".join(lines))
+    token = storage.create_pending(update.effective_user.id, "dfind", {"ids": [w["waifu_id"] for w in matches]}, 600)
+    await update.effective_message.reply_text(
+        _dfind_page_text(matches, 0),
+        reply_markup=_dfind_keyboard(update.effective_user.id, token, 0, len(matches))
+    )
+
+
+async def dfind_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q.data == "dfindnoop":
+        await q.answer()
+        return
+    parts = q.data.split(":")
+    if parts[0] == "dfinddel":
+        _, owner, token = parts
+        if q.from_user.id != int(owner):
+            await q.answer("Only the search owner can discard this result.", show_alert=True)
+            return
+        storage.finish_pending(token, "done")
+        await q.answer()
+        await q.message.delete()
+        return
+    _, owner, token, page_raw = parts
+    if q.from_user.id != int(owner):
+        await q.answer("Only the search owner can use these buttons.", show_alert=True)
+        return
+    pending = storage.get_pending(token, q.from_user.id, "dfind")
+    if not pending:
+        await q.answer("Search session expired.", show_alert=True)
+        return
+    ids = __import__("json").loads(pending["payload"])["ids"]
+    rows = [w for wid in ids if (w := storage.get_waifu(wid))]
+    page = int(page_raw)
+    await q.answer()
+    await q.edit_message_text(_dfind_page_text(rows, page), reply_markup=_dfind_keyboard(q.from_user.id, token, page, len(rows)))
 
 
 async def f_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
