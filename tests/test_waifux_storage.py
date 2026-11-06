@@ -45,3 +45,13 @@ def test_duplicate_waifu_ids_are_rejected(isolated_db):
     storage.add_waifu("1234", "Test Hero", "Test Anime", "Shiny", 40000, "photo-file-id", 9)
     with pytest.raises(Exception):
         storage.add_waifu("1234", "Another Hero", "Another Anime", "Rising", 30000, "photo-2", 9)
+
+
+
+def test_bot_user_ids_are_stable_unique_and_eleven_digits(isolated_db):
+    first = storage.ensure_bot_user_id(1001)
+    assert len(first) == 11 and first.isdigit()
+    assert storage.ensure_bot_user_id(1001) == first
+    second = storage.ensure_bot_user_id(1002)
+    assert len(second) == 11 and second.isdigit()
+    assert second != first
