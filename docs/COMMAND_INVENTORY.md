@@ -8,7 +8,7 @@ This inventory reflects commands currently registered by `waifux/handlers.py`. A
 | Economy | `/balance`, `/explore`, `/bonus`, `/bonusrefresh`, `/pay`, `/payrefresh` | Preserved legacy economy handlers |
 | Games | `/roll`, `/darts`, `/goal`, `/mines`, `/endmines` | Preserved legacy game handlers |
 | Codes | `/gen`, `/redeem`, `/dgen`, `/dredeem`, `/redeemtoggle`, `/dredeemtoggle` | Redeem handlers and owner toggles are separate |
-| Collection | `/collection`, `/fav`, `/dmode`, `/setprofile`, `/profile` | Paginated collection, read-only other-user view, favorites and profile settings |
+| Collection | `/collection`, `/fav`, `/fave`, `/dmode`, `/setprofile`, `/profile` | Paginated collection, read-only other-user view, favorites and profile settings |
 | Catalogue | `/upload`, `/dupload`, `/f`, `/find`, `/dfind` | Catalogue CRUD/lookup and paginated ownership/search views |
 | Gameplay | `/hunt`, `/waifu`, `/marriage`, `/propose` | Group spawns, daily claim and random proposal rewards |
 | Transfer | `/gift`, `/trade` | Confirmed gifting and bilateral waifu exchange |
