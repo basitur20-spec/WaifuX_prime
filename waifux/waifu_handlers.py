@@ -1324,6 +1324,76 @@ async def dmode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await q.edit_message_text(f"✅ Collection mode set to {mode}: {value}. Use /collection to view.")
 
 
+FIND_PAGE_SIZE = 10
+
+
+def _find_users_page(waifu_id: str, page: int):
+    offset = max(0, page) * FIND_PAGE_SIZE
+    with storage.connect() as con:
+        total_users = con.execute(
+            "SELECT COUNT(DISTINCT user_id) AS n FROM user_waifus WHERE waifu_id=?",
+            (waifu_id,),
+        ).fetchone()["n"]
+        rows = con.execute(
+            """SELECT uw.user_id,MIN(uw.obtained_at) AS obtained_at,
+            up.first_name,up.username,up.bot_user_id
+            FROM user_waifus uw
+            LEFT JOIN user_profiles up ON up.user_id=uw.user_id
+            WHERE uw.waifu_id=?
+            GROUP BY uw.user_id
+            ORDER BY MIN(uw.obtained_at) ASC
+            LIMIT ? OFFSET ?""",
+            (waifu_id, FIND_PAGE_SIZE, offset),
+        ).fetchall()
+    return total_users, rows, total_users
+
+
+def _find_caption(waifu, page: int):
+    total_users, rows, _ = _find_users_page(waifu["waifu_id"], page)
+    with storage.connect() as con:
+        total_picks = con.execute(
+            "SELECT COUNT(*) AS n FROM user_waifus WHERE waifu_id=?",
+            (waifu["waifu_id"],),
+        ).fetchone()["n"]
+    pages = max(1, (total_users + FIND_PAGE_SIZE - 1) // FIND_PAGE_SIZE)
+    emoji = RARITIES.get(waifu["rarity"], ("✨",))[0]
+    lines = [
+        "🌐 𝗖𝗛𝗔𝗥𝗔𝗖𝗧𝗘𝗥 𝗜𝗡𝗙𝗢:",
+        "┏━━━━━━━━━━━━━⧫",
+        f"✧𝗡𝗔𝗠𝗘: {waifu['name']} [{emoji}]",
+        f"✧𝗥𝗔𝗥𝗜𝗧𝗬: {waifu['rarity']} {emoji}",
+        f"✧𝗔𝗡𝗜𝗠𝗘: {waifu['anime']}",
+        f"✧𝗣𝗥𝗜𝗖𝗘: {_fmt(waifu['price'])}",
+        f"✧𝗜𝗗: {waifu['waifu_id']}",
+        f"✧𝗚𝗟𝗢𝗕𝗔𝗟𝗟𝗬 𝗣𝗜𝗖𝗞𝗘𝗗: {total_picks} Times...",
+        "┗━━━━━━━━━━━━━⧫",
+        "",
+        f"👥 𝗪𝗔𝗜𝗙𝗨 𝗢𝗪𝗡𝗘𝗥𝗦 — Page {page + 1}/{pages}",
+    ]
+    if rows:
+        for index, row in enumerate(rows, page * FIND_PAGE_SIZE + 1):
+            name = row["first_name"] or "Unknown"
+            username = f"@{row['username']}" if row["username"] else "No username"
+            public_id = row["bot_user_id"] or row["user_id"]
+            lines.append(f"{index}. {name} ({username}) | User ID: {public_id}")
+    else:
+        lines.append("No users currently own this waifu.")
+    return "\n".join(lines), pages
+
+
+def _find_keyboard(owner_id: int, waifu_id: str, page: int, pages: int):
+    previous_data = f"find:{owner_id}:{waifu_id}:{page - 1}" if page > 0 else "findnoop"
+    next_data = f"find:{owner_id}:{waifu_id}:{page + 1}" if page + 1 < pages else "findnoop"
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⬅ Previous", callback_data=previous_data),
+            InlineKeyboardButton(f"{page + 1}/{pages}", callback_data="findnoop"),
+            InlineKeyboardButton("Next ➡", callback_data=next_data),
+        ],
+        [InlineKeyboardButton("🗑 Discard", callback_data=f"finddel:{owner_id}")],
+    ])
+
+
 async def find_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
         await update.effective_message.reply_text("Usage: /find <waifu_id>")
@@ -1450,11 +1520,25 @@ async def f_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     w = storage.get_waifu(context.args[0])
     if not w:
-        await update.effective_message.reply_text("THIS ID IS NOT FOUND IN BOT DATABASE.")
+        await update.effective_message.reply_text("THIS ID IS NOT FOUND IN BOT DATA BASE.")
         return
     with storage.connect() as con:
-        picked = con.execute("SELECT COUNT(*) AS n FROM user_waifus WHERE waifu_id=?", (w["waifu_id"],)).fetchone()["n"]
-    caption = f"🌐 CHARACTER INFO\n{_display(w)}\n🌍 GLOBALLY PICKED: {picked} times..."
+        picked = con.execute(
+            "SELECT COUNT(*) AS n FROM user_waifus WHERE waifu_id=?",
+            (w["waifu_id"],),
+        ).fetchone()["n"]
+    emoji = RARITIES.get(w["rarity"], ("✨",))[0]
+    caption = (
+        "🌐 𝗖𝗛𝗔𝗥𝗔𝗖𝗧𝗘𝗥 𝗜𝗡𝗙𝗢:\n"
+        "┏━━━━━━━━━━━━━⧫\n"
+        f"✧𝗡𝗔𝗠𝗘: {w['name']} [{emoji}]\n"
+        f"✧𝗥𝗔𝗥𝗜𝗧𝗬: {w['rarity']} {emoji}\n"
+        f"✧𝗔𝗡𝗜𝗠𝗘: {w['anime']}\n"
+        f"✧𝗣𝗥𝗜𝗖𝗘: {_fmt(w['price'])}\n"
+        f"✧𝗜𝗗: {w['waifu_id']}\n"
+        f"✧𝗚𝗟𝗢𝗕𝗔𝗟𝗟𝗬 𝗣𝗜𝗖𝗞𝗘𝗗: {picked} Times...\n"
+        "┗━━━━━━━━━━━━━⧫"
+    )
     if w["image_file_id"]:
         await update.effective_message.reply_photo(w["image_file_id"], caption=caption)
     else:
