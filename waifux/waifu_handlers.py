@@ -1478,7 +1478,7 @@ async def setprofile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def dupload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _uploader(update.effective_user.id):
+    if not _sudo(update.effective_user.id):
         return
     msg = update.effective_message
     wid = context.args[0] if context.args else None
