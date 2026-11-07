@@ -388,12 +388,9 @@ async def sudo_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # SUDO COMMANDS
 # ---------------------------
 SUDO_COMMANDS = [
-    "/auction <waifu_id> <starting_bid> [hours]",
-    "/auction users",
     "/gen <amount> <quantity> [cash/dimond]",
     "/dgen <waifu_id> <quantity>",
     "/changetime <2-120 minutes>",
-    "/dupload <waifu_id>",
     "/give <waifu_id> <username|bot_user_id>",
     "/dtops",
     "/sudolist",
@@ -613,8 +610,6 @@ UPLOADER_COMMANDS = [
 
 UPLOADER_EXAMPLES = {
     "/upload": "Upload a waifu using an image and caption fields: Name, Rarity, Anime.",
-    "/auction <waifu_id> <starting_bid> [hours]": "Create an auction. Example: /auction 2342 1000000",
-    "/auction users": "View active auction bidders.",
     "/dgen <waifu_id> <quantity>": "Generate waifu codes. Example: /dgen 2947 5",
     "/dupload <waifu_id>": "Delete an uploaded waifu. Example: /dupload 38429",
     "/give <waifu_id> <username|bot_user_id>": "Grant a waifu to a user.",
