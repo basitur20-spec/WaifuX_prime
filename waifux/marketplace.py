@@ -310,7 +310,7 @@ async def auction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                  AND latest.max_amount=b.amount
                 LEFT JOIN user_profiles up ON up.user_id=b.bidder_id
                 WHERE a.status='active'
-                ORDER BY b.amount DESC,b.created_at ASC LIMIT 10"""
+                ORDER BY b.amount DESC,b.created_at ASC"""
             ).fetchall()
         if not rows:
             await update.effective_message.reply_text("No active auction bids.")
@@ -338,7 +338,7 @@ async def auction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     w = storage.get_waifu(wid)
     if not w or not w["image_file_id"]:
-        await update.effective_message.reply_text("THIS WAIFU IS NOT UPLOADED WITH A VALID IMAGE IN BOT DATABASE.")
+        await update.effective_message.reply_text("THIS WAIFU IS NOT UPLOADED IN BOT DATA BASE.")
         return
     try:
         with storage.connect() as con:
@@ -351,9 +351,9 @@ async def auction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     await update.effective_message.reply_photo(
         w["image_file_id"],
-        caption=f"🔨 NEW AUCTION CREATED!\n{_display(w)}\n"
-                f"💎 Starting bid: {_fmt(amount)} Cash\n⌛ Duration: {hours} hours\n"
-                "🏪 View and bid using /marketplace"
+        caption=f"🎉 Auction Listed Successfully!\n\n{_display(w)}\n"
+                f"💎 Starting Bid: {_fmt(amount)} Cash\n⌛ Duration: {hours} hours\n"
+                "🏪 Users can view and bid from /marketplace."
     )
 
 
@@ -364,7 +364,7 @@ async def _show_auction(q, uid: int) -> None:
             (storage.now(),)
         ).fetchone()
     if not auction:
-        await q.message.reply_text("AUCTION IS NOT AVAILABLE.")
+        await q.answer("AUCTION IS NOT AVAILABLE.", show_alert=True)
         return
     w = storage.get_waifu(auction["waifu_id"])
     remaining = max(0, auction["ends_at"] - storage.now())
