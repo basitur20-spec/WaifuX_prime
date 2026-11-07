@@ -10,7 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import ContextTypes
 
 from . import storage
-from .waifu_handlers import RARITIES, RARITY_ORDER, _display, _fmt, _owner, _sudo, _rarity_name
+from .waifu_handlers import RARITIES, RARITY_ORDER, _display, _fmt, _owner, _sudo, _staff, _rarity_name
 
 DISCOUNTS = {
     "ChibiArc": (6, 11), "WinterArc": (5, 10), "RoyalArc": (6, 15),
@@ -291,7 +291,7 @@ async def marketplace_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 async def auction_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     args = context.args
-    if not _sudo(uid):
+    if not _staff(uid):
         return
     if not args:
         await update.effective_message.reply_text(
