@@ -7,11 +7,11 @@ This inventory reflects the commands registered by `waifux/handlers.py`. Registr
 | Category | Commands |
 |---|---|
 | Core | `/start`, `/help` |
-| Collection/profile | `/collection`, `/fav`, `/fave`, `/dmode`, `/setprofile`, `/profile` |
+| Collection/profile | `/collection`, `/fav` (alias `/fave`), `/dmode`, `/setprofile`, `/profile` |
 | Waifu gameplay | `/hunt`, `/waifu`, `/marriage`, `/propose` |
-| Catalogue lookup | `/f`, `/find`, `/dfind` |
+| Catalogue | `/f`, `/find`, `/dfind`, `/upload` (staff) |
 | Economy | `/balance`, `/explore`, `/bonus`, `/pay`, `/redeem`, `/dredeem` |
-| Transfers | `/gift`, `/trade`, `/sell` |
+| Transfers/sales | `/gift`, `/trade`, `/sell` |
 | Marketplace/auction use | `/marketplace`, `/bid` |
 | Games | `/roll`, `/darts`, `/goal`, `/mines`, `/endmines` |
 | Group filters | `/filters`, `/filter`, `/delfilter`, `/delall` |
@@ -51,8 +51,13 @@ Price, ID and Aliases are optional. IDs are four digits. The bot assigns an in-r
 
 ## Important behavior notes
 
-- Group hunting requires 50 non-command group messages and respects the configured spawn interval.
-- Group anti-spam restriction requires Telegram admin permission.
+- `/hunt` counts 50 non-command group messages, hides spawned images with Telegram spoiler mode, gives each spawn a five-minute hunt window, accepts case-insensitive name/alias parts, and announces the escaped waifu with its details after timeout.
+- Group anti-spam restriction mutes a user for five minutes after five messages within five seconds, when the bot has group restriction permission.
+- `/waifu` has a per-user 12-hour cooldown and uses relative rarity weights Starter 50, Rising 50, Shiny 50, Ultimate 50, RoyalArc 5.
+- `/marriage` has a per-user 60-minute cooldown, 35% acceptance chance, and an equal Shiny/Ultimate reward pool.
+- `/propose` costs 30,000 cash, has a five-minute cooldown, uses a 35–45% random acceptance threshold, sends a persistent intro image plus a random SFW anime image album, and adds accepted rewards to the user's collection.
+- `/fav` has INLINE, COLLECTION and CANCEL actions. The INLINE action opens global catalogue results filtered by the selected character and rarity; the collection view puts the favourite image above the list.
+- `/setprofile <waifu_id>` asks for confirmation before updating the profile. Replying to a photo with `/setprofile` sets a custom profile photo directly.
 - The marketplace allows two purchases and two paid refreshes per user per Pakistan calendar day.
 - Auctions are settled by the scheduled JobQueue task after their end time.
 - Existing collection SQLite/JSON data is imported into the shared DB; balances remain in the existing `balance_system.db`.
