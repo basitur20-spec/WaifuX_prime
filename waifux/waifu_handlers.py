@@ -238,7 +238,8 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         photo_msg = msg.reply_to_message
         if photo_msg.photo:
             photo = photo_msg.photo[-1]
-        details_text = msg.text or msg.caption or ""
+        command_details = (msg.text or "").partition(" ")[2].strip()
+        details_text = command_details or photo_msg.caption or msg.caption or ""
     if not photo:
         await msg.reply_text(
             "Add the details in the photo caption, or reply to the photo with /upload.\n\n"
