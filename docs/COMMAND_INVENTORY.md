@@ -38,16 +38,38 @@ Notes:
 
 ## Upload syntax
 
-Send a photo with a caption, or reply to a photo with `/upload`, using:
-```text
-Name: Character Name
+A photo can carry the details in its caption, or the user can reply to a photo with \`/upload\`. Supported input styles:
+
+**Label and value on one line**
+\`\`\`text
+Name: Kyoko Hori
 Rarity: Shiny
-Anime: Anime Name
-Price: optional
-ID: optional
-Aliases: optional, comma-separated
-```
-Price, ID and Aliases are optional. IDs are four digits. The bot assigns an in-range default price when no price is supplied.
+Anime: Horimiya
+Price: 678000
+ID: 0001
+Aliases: Hori, Kyoko
+\`\`\`
+
+**Label and value on separate lines**
+\`\`\`text
+Name
+Kyoko Hori
+Rarity
+Shiny
+Anime
+Horimiya
+Price (optional)
+678000
+\`\`\`
+
+**Legacy comma format**
+\`\`\`text
+/upload 0001,Kyoko Hori,Horimiya,Shiny,678000
+\`\`\`
+
+Price, ID and Aliases are optional. A missing price is calculated from image dimensions/file size within the selected rarity's configured range. The uploader receives a 3% reward. The success response shows the final character name, rarity, anime, price and ID.
+
+Current database IDs are globally unique four-digit IDs (not reused between anime). This avoids ambiguous \`/f <id>\` and collection references in the existing database schema.
 
 ## Important behavior notes
 
@@ -57,7 +79,7 @@ Price, ID and Aliases are optional. IDs are four digits. The bot assigns an in-r
 - `/marriage` has a per-user 60-minute cooldown, 35% acceptance chance, and an equal Shiny/Ultimate reward pool.
 - `/propose` costs 30,000 cash, has a five-minute cooldown, uses a 35–45% random acceptance threshold, sends a persistent intro image plus a random SFW anime image album, and adds accepted rewards to the user's collection.
 - `/fav` has INLINE, COLLECTION and CANCEL actions. The INLINE action opens global catalogue results filtered by the selected character and rarity; the collection view puts the favourite image above the list.
-- `/setprofile <waifu_id>` asks for confirmation before updating the profile. Replying to a photo with `/setprofile` sets a custom profile photo directly.
+- `/setprofile <waifu_id>` asks for confirmation before updating the profile. Replying to a photo with `/setprofile` sets a custom profile photo directly. Profile photo and profile waifu are stored independently and can coexist.
 - The marketplace allows two purchases and two paid refreshes per user per Pakistan calendar day.
 - Auctions are settled by the scheduled JobQueue task after their end time.
 - Existing collection SQLite/JSON data is imported into the shared DB; balances remain in the existing `balance_system.db`.
