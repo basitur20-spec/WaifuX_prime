@@ -600,6 +600,12 @@ async def uploader_list_command(update: Update, context: ContextTypes.DEFAULT_TY
 # ---------------------------
 UPLOADER_COMMANDS = [
     "/upload",
+    "/auction <waifu_id> <starting_bid> [hours]",
+    "/auction users",
+    "/dgen <waifu_id> <quantity>",
+    "/dupload <waifu_id>",
+    "/give <waifu_id> <username|bot_user_id>",
+    "/dtops",
     "/uploaderlist",
     "/uploadercommands",
 ]
@@ -607,6 +613,12 @@ UPLOADER_COMMANDS = [
 
 UPLOADER_EXAMPLES = {
     "/upload": "Upload a waifu using an image and caption fields: Name, Rarity, Anime.",
+    "/auction <waifu_id> <starting_bid> [hours]": "Create an auction. Example: /auction 2342 1000000",
+    "/auction users": "View active auction bidders.",
+    "/dgen <waifu_id> <quantity>": "Generate waifu codes. Example: /dgen 2947 5",
+    "/dupload <waifu_id>": "Delete an uploaded waifu. Example: /dupload 38429",
+    "/give <waifu_id> <username|bot_user_id>": "Grant a waifu to a user.",
+    "/dtops": "View rarity-wise waifu upload statistics.",
     "/uploaderlist": "View the Uploader members list.",
     "/uploadercommands": "Open the Uploader command guide.",
 }
