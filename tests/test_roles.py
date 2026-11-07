@@ -65,9 +65,10 @@ def test_command_matrix_and_role_specific_help(tmp_path):
 
     assert handlers.ROLE_COMMANDS["addsudo"] == {"owner"}
     assert handlers.ROLE_COMMANDS["gen"] == {"sudo"}
+    assert handlers.ROLE_COMMANDS["dgen"] == {"sudo", "uploader"}
     assert handlers.ROLE_COMMANDS["upload"] == {"uploader"}
-    assert handlers.ROLE_COMMANDS["auction"] == {"sudo", "uploader"}
-    assert handlers.ROLE_COMMANDS["dupload"] == {"sudo", "uploader"}
+    assert handlers.ROLE_COMMANDS["auction"] == {"sudo"}
+    assert handlers.ROLE_COMMANDS["dupload"] == {"uploader"}
 
     assert "SUDO COMMAND GUIDE" in handlers._help_content(12345, "sudo")
     assert "UPLOADER COMMAND GUIDE" in handlers._help_content(67890, "uploader")
