@@ -1761,15 +1761,25 @@ async def dupload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # The image caption may contain an ID line.
         match = re.search(r"ID:\s*(\d{4})", msg.reply_to_message.caption or "", re.I)
         wid = match.group(1) if match else None
-    if not wid:
-        await msg.reply_text("Usage: /dupload <4-digit-waifu_id>")
+    if not wid or not re.fullmatch(r"\d{4}", str(wid)):
+        await msg.reply_text(
+            "❌ INVALID DUPLOAD COMMAND\n\n"
+            "Correct Usage:\n• /dupload 0001\n• Reply to a waifu message → /dupload"
+        )
         return
     w = storage.get_waifu(wid)
     if not w:
-        await msg.reply_text("Waifu not found.")
+        await msg.reply_text(
+            "❌ WAIFU NOT FOUND\n\nThis waifu does not exist in the database or is already deleted."
+        )
         return
     token = storage.create_pending(update.effective_user.id, "delete_waifu", {"waifu_id": wid}, 60)
-    caption = f"Delete {w['name']} ({wid}) from the catalogue and all collections?"
+    caption = (
+        "⚠️ CONFIRM WAIFU DELETION\n\n"
+        f"🧩 Name: {w['name']}\n🆔 ID: {wid}\n"
+        f"🵿 Rarity: {w['rarity']}\n🎬 Anime: {w['anime']}\n\n"
+        "This will remove the waifu from the bot database and every user's collection."
+    )
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Confirm Delete", callback_data=f"delok:{token}"), InlineKeyboardButton("Cancel", callback_data=f"delno:{token}")]])
     if w["image_file_id"]:
         await msg.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
@@ -1813,8 +1823,9 @@ async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         con.commit()
     await q.answer("Deleted.")
     await _edit_photo_or_text(
-        q, f"✅ WAIFU DELETED SUCCESSFULLY\n\n{waifu['name']}\n🆔 {wid}\n"
-        "Removed from catalogue and all user collections. Action logged."
+        q, f"✅ WAIFU DELETED SUCCESSFULLY\n\n"
+        f"🧩 {waifu['name']}\n🆔 ID: {wid}\n"
+        "Removed from the bot database and all user collections. The deletion has been logged."
     )
     info = _display(waifu)
     for user_id in affected:
