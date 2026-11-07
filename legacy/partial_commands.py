@@ -1227,7 +1227,7 @@ async def dgen_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(context.args) < 2:
         return await update.message.reply_text(
-            "*Usage:*\n`/dgen <waifu_id> <quantity> [sudo,uploader]`",
+            "*Usage:*\n`/dgen <waifu_id> <quantity>`",
             parse_mode=PARSE_MODE
         )
 
