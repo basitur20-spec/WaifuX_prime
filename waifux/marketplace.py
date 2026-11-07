@@ -271,7 +271,6 @@ async def marketplace_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await q.answer("Purchase successful!")
         offers = _ensure_offers(uid)
     elif action == "auction":
-        await q.answer()
         await _show_auction(q, uid)
         return
     else:
@@ -366,6 +365,7 @@ async def _show_auction(q, uid: int) -> None:
     if not auction:
         await q.answer("AUCTION IS NOT AVAILABLE.", show_alert=True)
         return
+    await q.answer()
     w = storage.get_waifu(auction["waifu_id"])
     remaining = max(0, auction["ends_at"] - storage.now())
     text = (
