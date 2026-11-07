@@ -59,10 +59,17 @@ HELP_CATEGORIES = {
         "/sell <waifu_id> — Sell a waifu"
     ),
     "market": (
-        "🏪 MARKETPLACE & AUCTIONS\n\n"
-        "/marketplace — Open your daily marketplace\n"
-        "Use the Auction button in the marketplace to view and bid.\n"
-        "Listing an auction is a Sudo/Owner action; see Staff Guide."
+        "🏪 MARKETPLACE\n\n"
+        "/marketplace — Open your personal daily marketplace.\n"
+        "Each offer has its own details, price, discount and Buy button.\n"
+        "Use the Refresh button to rotate eligible offers."
+    ),
+    "auction": (
+        "🔨 AUCTION GUIDE\n\n"
+        "Open /marketplace and tap the Auction button to view an active auction.\n"
+        "Choose the bid amount, then confirm or cancel your bid.\n"
+        "The highest valid bid wins when the auction timer ends.\n"
+        "Sudo/Owner staff can list auctions; see Staff Guide."
     ),
     "games": (
         "🎮 GAMES\n\n"
@@ -112,7 +119,8 @@ def _help_keyboard(uid: int, section: str = "main") -> InlineKeyboardMarkup:
              InlineKeyboardButton("💰 Economy", callback_data="HELP:economy")],
             [InlineKeyboardButton("🏪 Marketplace", callback_data="HELP:market"),
              InlineKeyboardButton("🎮 Games", callback_data="HELP:games")],
-            [InlineKeyboardButton("👥 Group Tools", callback_data="HELP:groups")],
+            [InlineKeyboardButton("🔨 Auctions", callback_data="HELP:auction"),
+             InlineKeyboardButton("👥 Group Tools", callback_data="HELP:groups")],
         ]
         if role != "user":
             rows.append([InlineKeyboardButton("🛡️ Staff Guide", callback_data="HELP:staff")])
@@ -206,14 +214,15 @@ async def help_callback(update, context) -> None:
     q = update.callback_query
     uid = q.from_user.id
     data = q.data or ""
-    await q.answer()
     if data == "OPEN_HELP" or data == "HELP:main":
+        await q.answer()
         await q.edit_message_text(
             "🌸 WAIFUX PRIME — HELP CENTER 🌸\n\nChoose a category to view its commands and instructions.",
             reply_markup=_help_keyboard(uid),
         )
         return
     if data == "HELP:close":
+        await q.answer()
         await q.delete_message()
         return
     section = data.partition(":")[2]
@@ -228,6 +237,7 @@ async def help_callback(update, context) -> None:
         if not permitted:
             await q.answer("This guide is not available for your role.", show_alert=True)
             return
+    await q.answer()
     await q.edit_message_text(
         _help_content(uid, section),
         reply_markup=_help_keyboard(uid, section),
