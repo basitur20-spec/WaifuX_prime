@@ -119,6 +119,8 @@ def _fmt(value: int) -> str:
 async def _is_chat_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if update.effective_chat.type == ChatType.PRIVATE:
         return False
+    if _owner(update.effective_user.id):
+        return True
     try:
         member = await context.bot.get_chat_member(update.effective_chat.id, update.effective_user.id)
         return member.status in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER)
