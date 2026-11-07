@@ -1234,7 +1234,7 @@ async def dgen_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     r = role(uid)
 
-    if r not in ("owner", "sudo"):
+    if r not in ("owner", "sudo", "uploader"):
         return
 
     if len(context.args) < 2:
