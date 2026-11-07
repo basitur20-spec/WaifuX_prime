@@ -423,6 +423,7 @@ def register_handlers(app: Application, owner_id: int) -> None:
         (r"^(?:cw_(?:next|prev)_\d+_\d+|cw_close)$", legacy.collection_callback),
         (r"^SUDO_GUIDE$", lambda update, context: staff_guide_callback(update, context, "sudo")),
         (r"^UPLOADER_GUIDE$", lambda update, context: staff_guide_callback(update, context, "uploader")),
+        (r"^setprofile(?:ok|no):", waifu.setprofile_callback),
     ]
     for pattern, callback in callback_map:
         app.add_handler(CallbackQueryHandler(callback, pattern=pattern))
