@@ -1640,8 +1640,7 @@ async def sell_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             con.execute("UPDATE pending_actions SET status='cancelled' WHERE token=?", (token,))
             con.commit()
             await q.answer("Cancelled.")
-            await q.edit_message_text("❌ Sale cancelled.")
-            storage.set_cooldown(q.from_user.id, "sell", 60)
+            await q.edit_message_text("❌ Sale cancelled.\nNo changes were made.")
             return
         if pending["action"] == "sell_diamonds":
             amount = int(data["amount"])
@@ -1683,7 +1682,11 @@ async def sell_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         con.commit()
     storage.set_cooldown(q.from_user.id, "sell", 60)
     await q.answer("Sale completed.")
-    await q.edit_message_text(f"✅ SOLD SUCCESSFULLY\n💰 Cash added: {_fmt(cash_added)}")
+    await q.edit_message_text(
+        "✅ SOLD SUCCESSFULLY!\n\n"
+        f"💰 Cash Added: {_fmt(cash_added)}\n"
+        "Your collection and balance have been updated."
+    )
 
 
 async def setprofile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
