@@ -53,3 +53,43 @@ def test_runtime_role_install_uses_replit_owner_id_for_legacy_checks(tmp_path, m
     assert legacy.is_owner(987654321)
     assert legacy.role(987654321) == "owner"
     assert legacy.is_staff(987654321)
+
+
+
+def test_command_matrix_and_role_specific_help(tmp_path):
+    from waifux import handlers
+
+    roles.configure(8163432539, tmp_path)
+    roles.save_sudo([12345])
+    roles.save_uploaders([67890])
+
+    assert handlers.ROLE_COMMANDS["addsudo"] == {"owner"}
+    assert handlers.ROLE_COMMANDS["gen"] == {"sudo"}
+    assert handlers.ROLE_COMMANDS["upload"] == {"uploader"}
+    assert handlers.ROLE_COMMANDS["auction"] == {"sudo", "uploader"}
+    assert handlers.ROLE_COMMANDS["dupload"] == {"sudo", "uploader"}
+
+    assert "SUDO COMMAND GUIDE" in handlers._help_content(12345, "sudo")
+    assert "UPLOADER COMMAND GUIDE" in handlers._help_content(67890, "uploader")
+    assert handlers._help_content(67890, "sudo") == "This guide is not available for your role."
+    assert "unrestricted access" in handlers._help_content(8163432539, "owner")
+
+
+def test_owner_bypasses_staff_command_guard(tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+    from waifux import handlers
+
+    roles.configure(8163432539, tmp_path)
+    called = []
+
+    async def callback(update, context):
+        called.append(update.effective_user.id)
+
+    guarded = handlers._guard_role("gen", callback)
+    owner_update = SimpleNamespace(effective_user=SimpleNamespace(id=8163432539))
+    uploader_update = SimpleNamespace(effective_user=SimpleNamespace(id=67890))
+
+    asyncio.run(guarded(owner_update, None))
+    asyncio.run(guarded(uploader_update, None))
+    assert called == [8163432539]
