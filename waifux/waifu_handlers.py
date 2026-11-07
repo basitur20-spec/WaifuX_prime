@@ -625,7 +625,7 @@ async def inline_collection(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             rows = [w for w in rows if w["rarity"].casefold() == rarity_filter]
         if term:
             def character_matches(w):
-                aliases = __import__("json").loads(w.get("aliases") or "[]")
+                aliases = __import__("json").loads(w["aliases"] or "[]")
                 return any(
                     term.casefold() in str(name).casefold()
                     for name in [w["name"], *aliases]
@@ -648,7 +648,7 @@ async def inline_collection(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             description=f"{w['rarity']} | {w['anime']}",
         )
         for i, w in enumerate(rows[:50])
-        if w.get("image_file_id")
+        if w["image_file_id"]
     ]
     await query.answer(results, cache_time=1, is_personal=True)
 
