@@ -38,3 +38,18 @@ def test_owner_id_cannot_be_accidentally_promoted_to_staff(tmp_path):
     assert roles.load_sudo() == [12345]
     assert roles.load_uploaders() == [67890]
     assert roles.role(8163432539) == "owner"
+
+
+
+def test_runtime_role_install_uses_replit_owner_id_for_legacy_checks(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    from legacy import partial_commands as legacy
+    from waifux.handlers import _install_runtime_roles
+
+    _install_runtime_roles(987654321)
+    assert legacy.OWNER_ID == 987654321
+    assert legacy.is_sudo_owner(987654321)
+    assert legacy.is_uploader_owner(987654321)
+    assert legacy.is_owner(987654321)
+    assert legacy.role(987654321) == "owner"
+    assert legacy.is_staff(987654321)
