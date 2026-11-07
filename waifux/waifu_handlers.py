@@ -1744,6 +1744,39 @@ async def setprofile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await msg.reply_text("⚠️ Please reply to a valid waifu image or photo.")
 
 
+async def setprofile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    action, token = q.data.split(":", 1)
+    pending = storage.get_pending(token, q.from_user.id, "set_profile_waifu")
+    if not pending:
+        await q.answer("This profile request has expired or does not belong to you.", show_alert=True)
+        return
+    data = __import__("json").loads(pending["payload"])
+    if action == "setprofileno":
+        storage.finish_pending(token, "cancelled")
+        await q.answer()
+        await _edit_photo_or_text(q, "❌ Profile update cancelled.")
+        return
+    w = storage.owned_waifu(q.from_user.id, data["waifu_id"])
+    if not w:
+        await q.answer("You no longer own this waifu.", show_alert=True)
+        return
+    storage.ensure_bot_user_id(q.from_user.id)
+    with storage.connect() as con:
+        con.execute(
+            """INSERT INTO user_profiles(user_id,profile_waifu_id,updated_at)
+            VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+            profile_waifu_id=excluded.profile_waifu_id,updated_at=excluded.updated_at""",
+            (q.from_user.id, w["waifu_id"], storage.now())
+        )
+    storage.finish_pending(token, "done")
+    await q.answer("Profile updated successfully.")
+    await _edit_photo_or_text(
+        q,
+        "💖 Profile Updated Successfully!\nYour waifu has been set as your profile."
+    )
+
+
 async def dupload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _uploader(update.effective_user.id):
         return
