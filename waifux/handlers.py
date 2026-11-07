@@ -95,9 +95,9 @@ ROLE_COMMANDS = {
     "adduploader": {"owner"}, "ruploader": {"owner"},
     "sudolist": {"sudo"}, "sudocommands": {"sudo"},
     "uploaderlist": {"uploader"}, "uploadercommands": {"uploader"},
-    "upload": {"uploader"}, "dupload": {"sudo"},
-    "auction": {"sudo"}, "changetime": {"sudo"},
-    "gen": {"sudo"}, "dgen": {"sudo"}, "give": {"sudo"}, "dtops": {"sudo"},
+    "upload": {"uploader"}, "dupload": {"sudo", "uploader"},
+    "auction": {"sudo", "uploader"}, "changetime": {"sudo"},
+    "gen": {"sudo"}, "dgen": {"sudo", "uploader"}, "give": {"sudo", "uploader"}, "dtops": {"sudo", "uploader"},
     "bonusrefresh": {"owner"}, "payrefresh": {"owner"},
     "redeemtoggle": {"owner"}, "dredeemtoggle": {"owner"},
     "marketspawn": {"owner"}, "spawn": {"owner"},
@@ -196,6 +196,12 @@ def _help_content(uid: int, section: str) -> str:
             "Send the image with caption fields:\n"
             "Name: Character Name\nRarity: Shiny\nAnime: Anime Name\n"
             "Price, ID and Aliases are optional.\n\n"
+            "/auction <waifu_id> <starting_bid> [hours] — List an auction\n"
+            "/auction users — View active auction bidders\n"
+            "/dgen <waifu_id> <quantity> — Generate waifu codes\n"
+            "/dupload <waifu_id> — Request character deletion\n"
+            "/give <waifu_id> <username|bot_user_id> — Grant a waifu\n"
+            "/dtops — View upload statistics\n"
             "/uploaderlist — View Uploader members\n"
             "/uploadercommands — Open this command guide"
         )
