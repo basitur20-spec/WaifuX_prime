@@ -695,7 +695,7 @@ async def spawn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def changetime_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _sudo(update.effective_user.id):
+    if not _staff(update.effective_user.id):
         return
     if update.effective_message.chat.type == ChatType.PRIVATE:
         await update.effective_message.reply_text("Use this command in a group: /changetime <2-120 minutes>")
