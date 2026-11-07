@@ -48,13 +48,21 @@ RARITY_WEIGHTS = {
     "Starter": 50, "Rising": 50, "Shiny": 50, "Ultimate": 50,
     "BeachArc": 13, "ChibiArc": 17, "WinterArc": 19, "LoveArc": 3,
     "DarkArc": 5, "ChristmasArc": 15, "RoyalArc": 35, "NeonArc": 25,
-    "CelestialArc": 35, "CrossArc": 4, "MangaArc": 50, "LimitedArc": 8,
-    "SpecialArc": 5, "DivineArc": 4, "CinemaArc": 4,
+    "CelestialArc": 35, "CrossArc": 4, "MangaArc": 50, "LimitedArc": 0,
+    "SpecialArc": 0, "DivineArc": 0, "CinemaArc": 0,
 }
 OWNER_ID = 0
 MESSAGE_COUNTS = defaultdict(int)
 RECENT_MESSAGES = defaultdict(deque)
 RARITY_ORDER = list(RARITIES)
+DAILY_WAIFU_WEIGHTS = {
+    "Starter": 50,
+    "Rising": 50,
+    "Shiny": 50,
+    "Ultimate": 50,
+    "RoyalArc": 5,
+}
+MARRIAGE_REWARD_WEIGHTS = {"Shiny": 50, "Ultimate": 50}
 
 
 def configure(owner_id: int) -> None:
@@ -109,9 +117,16 @@ def _display(w) -> str:
     )
 
 
-def _random_waifu(rarities: list[str] | None = None, respect_spawn_settings: bool = False):
+def _random_waifu(
+    rarities: list[str] | None = None,
+    respect_spawn_settings: bool = False,
+    weights: dict[str, int] | None = None,
+):
     available = []
+    weight_map = weights if weights is not None else RARITY_WEIGHTS
     for rarity in (rarities or RARITY_ORDER):
+        if weight_map.get(rarity, 0) <= 0:
+            continue
         if respect_spawn_settings:
             setting = storage.raw_connect()
             try:
@@ -130,25 +145,75 @@ def _random_waifu(rarities: list[str] | None = None, respect_spawn_settings: boo
     if not available:
         return None
     names = list(dict.fromkeys(r for r, _ in available))
-    weights = [RARITY_WEIGHTS.get(r, 1) for r in names]
-    chosen_rarity = random.choices(names, weights=weights, k=1)[0]
+    chosen_rarity = random.choices(names, weights=[weight_map[r] for r in names], k=1)[0]
     pool = [w for r, w in available if r == chosen_rarity]
     return random.choice(pool)
 
 
 def _parse_upload_details(raw: str) -> dict:
+    """Accept the documented label/value formats and the legacy comma format."""
+    raw = re.sub(r"^\s*/upload(?:@\w+)?\s*", "", raw or "", flags=re.I).strip()
+    if not raw:
+        return {}
+
+    labels = {"name", "rarity", "anime", "price", "id", "aliases"}
     data = {}
-    for line in raw.splitlines():
-        match = re.match(r"\s*(name|rarity|anime|price|id|aliases)\s*[:=]?\s+(.+?)\s*$", line, re.I)
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        match = re.match(
+            r"^(name|rarity|anime|price|id|aliases)\s*(?:\([^)]*\))?\s*(?::|=)?\s*(.*?)\s*$",
+            line,
+            re.I,
+        )
         if match:
-            data[match.group(1).lower()] = match.group(2).strip()
-    # Also accept the documented three-line plain format.
-    if not data:
-        lines = [line.strip() for line in raw.splitlines() if line.strip()]
-        if len(lines) >= 3:
-            data = {"name": lines[0], "rarity": lines[1], "anime": lines[2]}
-            if len(lines) >= 4:
-                data["price"] = lines[3]
+            key, value = match.group(1).lower(), match.group(2).strip()
+            if key == "anime" and value.casefold() == "name":
+                value = ""
+            if not value and i + 1 < len(lines):
+                next_line = lines[i + 1]
+                if not re.match(
+                    r"^(?:name|rarity|anime|price|id|aliases)\s*(?:\([^)]*\))?\s*(?::|=)?(?:\s|$)",
+                    next_line,
+                    re.I,
+                ):
+                    value = next_line
+                    i += 1
+            if value:
+                data[key] = value
+        i += 1
+
+    if data:
+        return data
+
+    # Older syntax: /upload 38429,Name,Anime,Rarity[,Price]
+    comma_parts = [part.strip() for part in raw.replace("\n", ",").split(",") if part.strip()]
+    if len(comma_parts) >= 4 and comma_parts[0].isdigit():
+        data = {
+            "id": comma_parts[0],
+            "name": comma_parts[1],
+            "anime": comma_parts[2],
+            "rarity": comma_parts[3],
+        }
+        if len(comma_parts) >= 5:
+            data["price"] = comma_parts[4]
+        return data
+    if len(comma_parts) >= 3:
+        data = {
+            "name": comma_parts[0],
+            "anime": comma_parts[1],
+            "rarity": comma_parts[2],
+        }
+        if len(comma_parts) >= 4:
+            data["price"] = comma_parts[3]
+        return data
+
+    # Short plain format: Name, Rarity, Anime, optional Price.
+    if len(lines) >= 3:
+        data = {"name": lines[0], "rarity": lines[1], "anime": lines[2]}
+        if len(lines) >= 4:
+            data["price"] = lines[3]
     return data
 
 
@@ -189,7 +254,8 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         photo_msg = msg.reply_to_message
         if photo_msg.photo:
             photo = photo_msg.photo[-1]
-        details_text = msg.text or msg.caption or ""
+        command_details = (msg.text or "").partition(" ")[2].strip()
+        details_text = command_details or photo_msg.caption or msg.caption or ""
     if not photo:
         await msg.reply_text(
             "Add the details in the photo caption, or reply to the photo with /upload.\n\n"
@@ -226,13 +292,25 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await msg.reply_text(f"❌ Upload rejected: {exc}")
         return
     w = storage.get_waifu(wid)
-    await msg.reply_photo(
-        photo=photo.file_id,
-        caption=f"🌐 CHARACTER INFO\n{_display(w)}\n\n🎉 Upload Successful!\n"
-                f"You earned +{_fmt(reward)} coins (3% uploader bonus)."
-                + (f"\n\nAuto-corrected:\n" + "\n".join(corrections) if corrections else "")
-                + (f"\nQuality-based price: {_fmt(price)}" if not data.get("price") else "")
+    rarity_emoji = RARITIES[rarity][0]
+    success_caption = (
+        "🌐 CHARACTER INFO:\n"
+        "┏━━━━━━━━━━━━━⧫\n"
+        f"✧ NAME: {w['name']} [{rarity_emoji}]\n"
+        f"✧ RARITY: {w['rarity']} {rarity_emoji}\n"
+        f"✧ ANIME: {w['anime']}\n"
+        f"✧ PRICE: {_fmt(w['price'])}\n"
+        f"✧ ID: {w['waifu_id']}\n"
+        "┗━━━━━━━━━━━━━⧫\n\n"
+        "🎉 Upload Successful!\n"
+        "This waifu has been added to the global database.\n"
+        f"You earned +{_fmt(reward)} coins (3%)."
     )
+    if not data.get("price"):
+        success_caption += "\n\nℹ️ Price Auto-Set by System\nPrice was automatically calculated based on image quality."
+    if data.get("id"):
+        success_caption += "\nManual ID has been registered successfully."
+    await msg.reply_photo(photo=photo.file_id, caption=success_caption)
     channel_id = os.getenv("WAIFU_CHANNEL_ID")
     if channel_id:
         try:
@@ -417,7 +495,7 @@ async def _send_fav_confirmation(message, uid: int, wid: str):
         InlineKeyboardButton("COLLECTION", callback_data=f"favconfirm:{token}"),
         InlineKeyboardButton("CANCEL", callback_data=f"favcancel:{token}")
     ]])
-    caption = f"Do you really want to set {w['name']} as your favourite waifu?"
+    caption = f"ᴅᴏ ʏᴏᴜ ʀᴇᴀʟʟʏ ᴡᴀɴᴛ ᴛᴏ ꜱᴇᴛ ({w['name']}) ᴀꜱ ʏᴏᴜʀ ꜰᴀᴠᴏʀɪᴛᴇ ᴡᴀɪꜰᴜ?"
     if w["image_file_id"]:
         await message.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
     else:
@@ -520,11 +598,16 @@ async def waifu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await _edit_photo_or_text(
                     q, f"❤️ {w['name']} is now your favourite. Open inline mode:",
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("Open Inline Collection", switch_inline_query_current_chat=f"waifu {w['name']}")
+                        InlineKeyboardButton("OPEN CHARACTER INLINE", switch_inline_query_current_chat=f"waifu {w['name']} rarity:{w['rarity']}")
                     ]])
                 )
             else:
                 await _edit_photo_or_text(q, f"❤️ {w['name']} is now your favourite.")
+                if w["image_file_id"]:
+                    await q.message.reply_photo(
+                        w["image_file_id"],
+                        caption=f"❤️ YOUR FAVOURITE WAIFU\n{_display(w)}",
+                    )
                 rows = storage.collection(q.from_user.id)
                 await _send_collection(q.message, q.from_user.id, 0, rows, q.from_user.id)
 
@@ -533,26 +616,54 @@ async def inline_collection(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     from telegram import InlineQueryResultCachedPhoto
     query = update.inline_query
     term = query.query.strip()
-    rows = [w for w in _collection_for_user(query.from_user.id) if w['image_file_id']]
-    if term:
-        bits = term.split(maxsplit=1)
-        term = bits[1] if len(bits) == 2 and bits[0].lower() == "waifu" else term
-        rows = [w for w in rows if term.casefold() in w["name"].casefold() or term.casefold() in w["anime"].casefold()]
+    global_catalogue = term.casefold().startswith("waifu ")
+    rarity_filter = None
+
+    if global_catalogue:
+        term = term[6:].strip()
+        rarity_match = re.search(r"\s+rarity:([a-z0-9]+)\s*$", term, re.I)
+        if rarity_match:
+            rarity_filter = rarity_match.group(1).casefold()
+            term = term[:rarity_match.start()].strip()
+        rows = storage.list_waifus(limit=10000)
+        if rarity_filter:
+            rows = [w for w in rows if w["rarity"].casefold() == rarity_filter]
+        if term:
+            def character_matches(w):
+                aliases = __import__("json").loads(w["aliases"] or "[]")
+                return any(
+                    term.casefold() in str(name).casefold()
+                    for name in [w["name"], *aliases]
+                )
+            rows = [w for w in rows if character_matches(w)]
+    else:
+        rows = [w for w in _collection_for_user(query.from_user.id) if w["image_file_id"]]
+        if term:
+            rows = [
+                w for w in rows
+                if term.casefold() in w["name"].casefold()
+                or term.casefold() in w["anime"].casefold()
+            ]
+
     results = [
         InlineQueryResultCachedPhoto(
-            id=f"{w['waifu_id']}-{i}", photo_file_id=w["image_file_id"],
-            title=w["name"], description=f"{w['rarity']} | {w['anime']}"
+            id=f"{w['waifu_id']}-{i}",
+            photo_file_id=w["image_file_id"],
+            title=w["name"],
+            description=f"{w['rarity']} | {w['anime']}",
         )
         for i, w in enumerate(rows[:50])
+        if w["image_file_id"]
     ]
     await query.answer(results, cache_time=1, is_personal=True)
 
 
 async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
-    w = _random_waifu(["Starter", "Rising", "Shiny", "Ultimate", "RoyalArc"])
+    daily_weights = DAILY_WAIFU_WEIGHTS
+    w = _random_waifu(list(daily_weights), weights=daily_weights)
     if not w:
-        await update.effective_message.reply_text("No waifus are currently available in the reward pool.")
+        await update.effective_message.reply_text("No waifus are currently available in the daily reward pool.")
         return
     with storage.connect() as con:
         con.execute("BEGIN IMMEDIATE")
@@ -560,16 +671,25 @@ async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         left = max(0, int(row["expires_at"]) - storage.now()) if row else 0
         if left:
             con.rollback()
-            await update.effective_message.reply_text(f"⏳ Please wait {left//3600:02d}:{(left%3600)//60:02d}:{left%60:02d} before claiming your next waifu.")
+            hours, remainder = divmod(left, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            await update.effective_message.reply_text(
+                f"ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ ʙᴇꜰᴏʀᴇ ᴄʟᴀɪᴍɪɴɢ ʏᴏᴜʀ ɴᴇxᴛ ᴡᴀɪꜰᴜ.\n"
+                f"⏳ ᴛɪᴍᴇ ʟᴇꜰᴛ: {hours:02d}:{minutes:02d}:{seconds:02d}"
+            )
             return
         con.execute("INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)", (uid, w["waifu_id"], storage.now(), "daily"))
         con.execute("INSERT INTO cooldowns(user_id,action,expires_at) VALUES (?,?,?) ON CONFLICT(user_id,action) DO UPDATE SET expires_at=excluded.expires_at", (uid, "daily_waifu", storage.now()+12*60*60))
         con.execute("INSERT INTO transactions(tx_id,actor_id,action,waifu_id,created_at) VALUES (?,?,?,?,?)", (__import__("uuid").uuid4().hex, uid, "daily_waifu", w["waifu_id"], storage.now()))
         con.commit()
-    await update.effective_message.reply_photo(
-        w["image_file_id"],
-        caption=f"🎉 Congratulations {update.effective_user.first_name}! You won!\n{_display(w)}"
+    emoji = RARITIES.get(w["rarity"], ("✨",))[0]
+    caption = (
+        f"𝗖𝗢𝗡𝗚𝗥𝗔𝗧𝗨𝗟𝗔𝗧𝗜𝗢𝗡𝗦 {update.effective_user.first_name}! 𝗬𝗢𝗨 𝗪𝗢𝗡 🔥\n"
+        f"◈ 𝗡𝗔𝗠𝗘: {w['name']}\n"
+        f"◈ 𝗥𝗔𝗥𝗜𝗧𝗬: {emoji} {w['rarity']}\n"
+        f"◈ 𝗔𝗡𝗜𝗠𝗘: {w['anime']}"
     )
+    await update.effective_message.reply_photo(w["image_file_id"], caption=caption)
 
 
 async def hunt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -587,13 +707,13 @@ async def hunt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         spawn = con.execute("SELECT * FROM active_spawns WHERE chat_id=?", (msg.chat_id,)).fetchone()
         if not spawn or spawn["expires_at"] <= storage.now():
             con.rollback()
-            await msg.reply_text("❌ NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEXT SPAWN.")
+            await msg.reply_text("❌NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEST SPAWN.")
             return
         w = con.execute("SELECT * FROM waifus WHERE waifu_id=? AND deleted_at IS NULL", (spawn["waifu_id"],)).fetchone()
         if not w:
             con.execute("DELETE FROM active_spawns WHERE chat_id=?", (msg.chat_id,))
             con.commit()
-            await msg.reply_text("❌ NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEXT SPAWN.")
+            await msg.reply_text("❌NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEST SPAWN.")
             return
         names = [w["name"], *(__import__("json").loads(w["aliases"] or "[]"))]
         normalized_names = [name.casefold().strip() for name in names]
@@ -605,7 +725,7 @@ async def hunt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         fuzzy_match = bool(difflib.get_close_matches(supplied, normalized_names, n=1, cutoff=0.72))
         if not partial_match and not fuzzy_match:
             con.rollback()
-            await msg.reply_text("❌ NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEXT SPAWN.")
+            await msg.reply_text("❌NO CHARACTER HAS SPAWNED YET. PLEASE WAIT FOR THE NEST SPAWN.")
             return
         con.execute("INSERT INTO user_waifus(user_id,waifu_id,obtained_at,source) VALUES (?,?,?,?)", (msg.from_user.id, w["waifu_id"], storage.now(), "hunt"))
         con.execute("DELETE FROM active_spawns WHERE chat_id=?", (msg.chat_id,))
@@ -613,10 +733,20 @@ async def hunt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         con.commit()
     finally:
         con.close()
+    emoji = RARITIES.get(w["rarity"], ("✨",))[0]
+    caption = (
+        "Congratulation 🎉\n"
+        f"{msg.from_user.first_name} 𝙔𝙤𝙪 𝙂𝙤𝙩 𝙉𝙚𝙬 𝙬𝙖𝙞𝙛𝙪🫧\n"
+        f"🌸𝗡𝗔𝗠𝗘: {w['name']}\n"
+        f"🧩𝗔𝗡𝗜𝗠𝗘: {w['anime']}\n"
+        f"𝗥𝗔𝗥𝗜𝗧𝗬: {emoji} {w['rarity']}\n"
+        f"🆔𝗜𝗗: {w['waifu_id']}\n\n"
+        "⛩ 𝘾𝙝𝙚𝙘𝙠 𝙮𝙤𝙪𝙧 /collection 𝙉𝙤𝙬"
+    )
     await msg.reply_photo(
         w["image_file_id"],
-        caption=f"🎉 Congratulations {msg.from_user.first_name}! You got a new waifu!\n{_display(w)}\n\nCheck /collection now.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("COLLECTION 🔥", callback_data=f"col:{msg.from_user.id}:0")]])
+        caption=caption,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("COLLECTION🔥", callback_data=f"col:{msg.from_user.id}:0")]])
     )
 
 
@@ -638,7 +768,7 @@ async def group_activity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 chat_id, uid, permissions=__import__("telegram").ChatPermissions(can_send_messages=False),
                 until_date=int(time.time()) + 300
             )
-            await msg.reply_text(f"{msg.from_user.first_name}, you have been muted for 5 minutes due to spam.\nYour messages will not count toward character spawns.")
+            await msg.reply_text(f"{msg.from_user.first_name}, your messages won't be counted for 5 minutes.\nYou cannot spam to get characters to this Bot.")
         except Exception:
             await msg.reply_text("⚠️ Anti-spam detected, but I could not mute this user. Please make the bot an administrator with permission to restrict members.")
         q.clear()
@@ -671,7 +801,7 @@ async def group_activity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         con.close()
     await context.bot.send_photo(
         chat_id=chat_id, photo=w["image_file_id"], has_spoiler=True,
-        caption="✨ A new character has appeared!\nUse /hunt (name) to add it to your collection."
+        caption="✨ ᴀ ɴᴇᴡ ᴄʜᴀʀᴀᴄᴛᴇʀ ʜᴀꜱ ᴀᴘᴘᴇᴀʀᴇᴅ! ✨\nᴜꜱᴇ /hunt (ɴᴀᴍᴇ) ᴛᴏ ᴀᴅᴅ ɪᴛ ɪɴ ʏᴏᴜʀ COLLECTION."
     )
 
 
@@ -682,8 +812,8 @@ async def spawn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.effective_message.reply_text("Usage: /spawn <rarity> on/off")
         return
     rarity, status = _rarity_name(context.args[0]), context.args[1].lower()
-    if not rarity or status not in {"on", "off"}:
-        await update.effective_message.reply_text("Invalid rarity or on/off value.")
+    if not rarity or RARITY_WEIGHTS.get(rarity, 0) <= 0 or status not in {"on", "off"}:
+        await update.effective_message.reply_text("Invalid or non-spawnable rarity. Use one of the 15 configured spawn rarities and choose on/off.")
         return
     with storage.connect() as con:
         con.execute(
@@ -695,17 +825,23 @@ async def spawn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def changetime_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _sudo(update.effective_user.id):
+    if not _staff(update.effective_user.id):
         return
-    if update.effective_message.chat.type == ChatType.PRIVATE:
-        await update.effective_message.reply_text("Use this command in a group: /changetime <2-120 minutes>")
+    msg = update.effective_message
+    if msg.chat.type == ChatType.PRIVATE:
+        await msg.reply_text("Use this command in the group whose spawn timer you want to change.")
         return
-    try:
-        minutes = int(context.args[0])
-        if not 2 <= minutes <= 120:
-            raise ValueError
-    except (ValueError, IndexError):
-        await update.effective_message.reply_text("Usage: /changetime <2-120 minutes>")
+    if len(context.args) != 1 or not context.args[0].isdigit():
+        await msg.reply_text(
+            "⚠️ INVALID CHANGETIME FORMAT\n\n"
+            "Examples:\n/changetime 5\n/changetime 10"
+        )
+        return
+    minutes = int(context.args[0])
+    if not 2 <= minutes <= 120:
+        await msg.reply_text(
+            "❌ INVALID TIME RANGE\n\nMinimum: 2 minutes\nMaximum: 120 minutes."
+        )
         return
     with storage.connect() as con:
         con.execute(
@@ -714,7 +850,14 @@ async def changetime_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             spawn_interval=excluded.spawn_interval,next_spawn_at=excluded.next_spawn_at,enabled=1""",
             (update.effective_chat.id, minutes, storage.now() + minutes * 60)
         )
-    await update.effective_message.reply_text(f"✅ Spawn interval set to every {minutes} minutes.")
+    group_name = update.effective_chat.title or str(update.effective_chat.id)
+    await msg.reply_text(
+        "⏱ SPAWN INTERVAL UPDATED SUCCESSFULLY!\n\n"
+        f"Group: {group_name}\n"
+        f"Spawn Interval: Every {minutes} minutes\n"
+        "Status: ACTIVE ✅\n"
+        "The new timer starts now for this group."
+    )
 
 
 async def marriage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -725,19 +868,28 @@ async def marriage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         left = max(0, int(row["expires_at"]) - storage.now()) if row else 0
         if left:
             con.rollback()
-            await update.effective_message.reply_text(f"⏳ Try again in {left//60}m {left%60}s.")
+            minutes, seconds = divmod(left, 60)
+            await update.effective_message.reply_text(f"⏳ ʏᴏᴜ ᴄᴀɴ ᴜꜱᴇ /marriage ᴀɢᴀɪɴ ɪɴ {minutes:02d}ᴍ {seconds:02d}ꜱ.")
             return
         con.execute("INSERT INTO cooldowns(user_id,action,expires_at) VALUES (?,?,?) ON CONFLICT(user_id,action) DO UPDATE SET expires_at=excluded.expires_at", (uid, "marriage", storage.now()+3600))
         con.commit()
     if random.random() >= 0.35:
-        await update.effective_message.reply_text(f"{update.effective_user.first_name}, your marriage proposal was rejected and she ran away! 🤡")
+        await update.effective_message.reply_text(
+            f"{update.effective_user.first_name}, ʏᴏᴜʀ ᴍᴀʀʀɪᴀɢᴇ ᴘʀᴏᴘᴏꜱᴀʟ ᴡᴀꜱ ʀᴇᴊᴇᴄᴛᴇᴅ ᴀɴᴅ ꜱʜᴇ ʀᴀɴ ᴀᴡᴀʏ! 🤡"
+        )
         return
-    w = _random_waifu(["Shiny", "Ultimate"])
+    w = _random_waifu(["Shiny", "Ultimate"], weights=MARRIAGE_REWARD_WEIGHTS)
     if not w:
         await update.effective_message.reply_text("No waifus are currently available for marriage rewards.")
         return
     storage.add_to_collection(uid, w["waifu_id"], "marriage")
-    await update.effective_message.reply_photo(w["image_file_id"], caption=f"💍 Congratulations! You are now married!\n{_display(w)}")
+    emoji = RARITIES.get(w["rarity"], ("✨",))[0]
+    caption = (
+        f"ᴄᴏɴɢʀᴀᴛᴜʟᴀᴛɪᴏɴꜱ! {update.effective_user.first_name}, "
+        "ʏᴏᴜ ᴀʀᴇ ɴᴏᴡ ᴍᴀʀʀɪᴇᴅ! ʜᴇʀᴇ ɪꜱ ʏᴏᴜʀ ᴄʜᴀʀᴀᴄᴛᴇʀ:\n\n"
+        f"Name: {w['name']}\nRarity: {emoji} {w['rarity']}\nAnime: {w['anime']}"
+    )
+    await update.effective_message.reply_photo(w["image_file_id"], caption=caption)
 
 
 def _request_waifu_api_images(limit: int = 3) -> list[str]:
@@ -793,6 +945,29 @@ async def _proposal_gallery_images(intro_url: str | None) -> list[str]:
         return []
 
 
+async def _random_proposal_reward():
+    rarity_weights = {
+        "ChristmasArc": 35,
+        "RoyalArc": 60,
+        "NeonArc": 35,
+        "CelestialArc": 55,
+    }
+    all_waifus = storage.list_waifus(limit=10000)
+    pools = {
+        rarity: [w for w in all_waifus if w["rarity"] == rarity and w["image_file_id"]]
+        for rarity in rarity_weights
+    }
+    available = [rarity for rarity, waifus in pools.items() if waifus]
+    if not available:
+        return None
+    selected = random.choices(
+        available,
+        weights=[rarity_weights[rarity] for rarity in available],
+        k=1,
+    )[0]
+    return random.choice(pools[selected])
+
+
 async def propose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     with storage.connect() as con:
@@ -801,34 +976,38 @@ async def propose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         left = max(0, int(row["expires_at"]) - storage.now()) if row else 0
         if left:
             con.rollback()
-            await update.effective_message.reply_text(f"⏳ Cooldown: {left//60}m {left%60}s.")
+            minutes, seconds = divmod(left, 60)
+            await update.effective_message.reply_text(
+                f"ᴄᴏᴏʟᴅᴏᴡɴ! ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ {minutes:02d}ᴍ {seconds:02d}ꜱ ʙᴇꜰᴏʀᴇ ᴘʀᴏᴘᴏꜱɪɴɢ ᴀɢᴀɪɴ."
+            )
             return
         con.execute("INSERT OR IGNORE INTO user_balance(user_id) VALUES (?)", (uid,))
         cash = con.execute("SELECT cash FROM user_balance WHERE user_id=?", (uid,)).fetchone()["cash"]
         if cash < 30_000:
             con.rollback()
-            await update.effective_message.reply_text("You need 30,000 Cash 💸 to propose.")
+            await update.effective_message.reply_text("YOU NEED 30,000 CASH💸 TO PROPOSE.")
             return
         con.execute("UPDATE user_balance SET cash=cash-30000 WHERE user_id=?", (uid,))
-        con.execute("INSERT INTO cooldowns(user_id,action,expires_at) VALUES (?,?,?) ON CONFLICT(user_id,action) DO UPDATE SET expires_at=excluded.expires_at", (uid, "propose", storage.now()+300))
-        con.execute("INSERT INTO transactions(tx_id,actor_id,action,amount,created_at) VALUES (?,?,?,?,?)", (__import__("uuid").uuid4().hex, uid, "propose_fee", 30000, storage.now()))
+        con.execute(
+            "INSERT INTO cooldowns(user_id,action,expires_at) VALUES (?,?,?) ON CONFLICT(user_id,action) DO UPDATE SET expires_at=excluded.expires_at",
+            (uid, "propose", storage.now()+300)
+        )
+        con.execute(
+            "INSERT INTO transactions(tx_id,actor_id,action,amount,created_at) VALUES (?,?,?,?,?)",
+            (__import__("uuid").uuid4().hex, uid, "propose_fee", 30000, storage.now())
+        )
         con.commit()
 
     intro_url = await _proposal_intro_image()
+    intro_caption = f"{update.effective_user.first_name} 💫 ᴛʜᴇ ᴍᴏᴍᴇɴᴛ ʏᴏᴜ'ᴠᴇ ʙᴇᴇɴ ᴡᴀɪᴛɪɴɢ ꜰᴏʀ 💫"
+    intro_message = None
     if intro_url:
         try:
-            await update.effective_message.reply_photo(
-                intro_url,
-                caption=f"💫 {update.effective_user.first_name}, the moment you've been waiting for... 💫",
-            )
+            intro_message = await update.effective_message.reply_photo(intro_url, caption=intro_caption)
         except Exception:
-            await update.effective_message.reply_text(
-                f"💫 {update.effective_user.first_name}, the moment you've been waiting for... 💫"
-            )
+            intro_message = await update.effective_message.reply_text(intro_caption)
     else:
-        await update.effective_message.reply_text(
-            f"💫 {update.effective_user.first_name}, the moment you've been waiting for... 💫"
-        )
+        intro_message = await update.effective_message.reply_text(intro_caption)
 
     gallery_urls = await _proposal_gallery_images(intro_url)
     if gallery_urls:
@@ -836,41 +1015,76 @@ async def propose_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             gallery = [
                 InputMediaPhoto(
                     media=url,
-                    caption="💍 Gathering courage for the proposal...\nAnime images via Waifu API." if index == 0 else None,
+                    caption="ᴘʀᴏᴘᴏꜱɪɴɢ ʜᴇʀ.... 💍" if index == 0 else None,
                 )
                 for index, url in enumerate(gallery_urls)
             ]
             processing_messages = await context.bot.send_media_group(
                 chat_id=update.effective_chat.id,
                 media=gallery,
-                reply_to_message_id=update.effective_message.message_id,
+                reply_to_message_id=intro_message.message_id,
             )
             processing = processing_messages[0]
         except Exception:
-            processing = await update.effective_message.reply_text(
-                "💍 Gathering courage for the proposal..."
+            processing = await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="ᴘʀᴏᴘᴏꜱɪɴɢ ʜᴇʀ.... 💍",
+                reply_to_message_id=intro_message.message_id,
             )
     else:
-        processing = await update.effective_message.reply_text(
-            "💍 Gathering courage for the proposal..."
+        processing = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="ᴘʀᴏᴘᴏꜱɪɴɢ ʜᴇʀ.... 💍",
+            reply_to_message_id=intro_message.message_id,
         )
 
     await asyncio.sleep(random.randint(3, 5))
-    if random.uniform(0, 100) <= random.randint(35, 45):
-        w = _random_waifu(["ChristmasArc", "RoyalArc", "NeonArc", "CelestialArc"])
+    accepted = random.uniform(0, 100) <= random.randint(35, 45)
+    if accepted:
+        w = await _random_proposal_reward()
         if w:
             storage.add_to_collection(uid, w["waifu_id"], "propose")
-            await processing.reply_photo(
-                w["image_file_id"],
-                caption=f"💖 {w['name']} has accepted your proposal!\n{_display(w)}",
+            caption = (
+                f"{w['name']} [🍾] ʜᴀꜱ ᴀᴄᴄᴇᴘᴛᴇᴅ ʏᴏᴜʀ ᴘʀᴏᴘᴏꜱᴀʟ! 😇\n\n"
+                f"☘️ Name: {w['name']} [🍾]\n"
+                f"🵿 Rarity: {w['rarity']}\n"
+                f"💠 Anime: {w['anime']}\n\n"
+                "✨ Added to your /collection."
+            )
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=w["image_file_id"],
+                caption=caption,
+                reply_to_message_id=processing.message_id,
             )
             return
 
-    rejection = random.choice([
-        "You've been friend-zoned so hard, you're now the mayor of Friend Zone City! 🏙️",
-        "Breaking news: local simp gets rejected so hard! 🥲",
-    ])
-    await processing.reply_text(rejection)
+    rejection_options = [
+        "ʏᴏᴜ'ᴠᴇ ʙᴇᴇɴ ꜰʀɪᴇɴᴅ-ᴢᴏɴᴇᴅ ꜱᴏ ʜᴀʀᴅ,\nʏᴏᴜ'ʀᴇ ɴᴏᴡ ᴛʜᴇ ᴍᴀʏᴏʀ ᴏꜰ ꜰʀɪᴇɴᴅ ᴢᴏɴᴇ ᴄɪᴛʏ! 🏙️",
+        "ʙʀᴇᴀᴋɪɴɢ ɴᴇᴡꜱ:\nʟᴏᴄᴀʟ ꜱɪᴍᴘ ɢᴇᴛꜱ ʀᴇᴊᴇᴄᴛᴇᴅ ꜱᴏ ʜᴀʀᴅ,\nᴇᴠᴇɴ ʜɪꜱ ᴀɴɪᴍᴇ ʙᴏᴅʏ ᴘɪʟʟᴏᴡ ʟᴇꜰᴛ ʜɪᴍ! 🥲🛏️",
+    ]
+    rejection = random.choice(rejection_options)
+    try:
+        rejection_urls = await asyncio.to_thread(_request_waifu_api_images, 1)
+        if rejection_urls:
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=rejection_urls[0],
+                caption=rejection,
+                reply_to_message_id=processing.message_id,
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=rejection,
+                reply_to_message_id=processing.message_id,
+            )
+    except Exception:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=rejection,
+            reply_to_message_id=processing.message_id,
+        )
 
 
 async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -880,42 +1094,57 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         search = context.args[0].lstrip("@")
         with storage.connect() as con:
             if search.isdigit():
-                found = con.execute("SELECT * FROM user_profiles WHERE bot_user_id=? OR user_id=?", (search, int(search))).fetchone()
+                found = con.execute(
+                    "SELECT * FROM user_profiles WHERE bot_user_id=? OR user_id=?",
+                    (search, int(search)),
+                ).fetchone()
             else:
-                found = con.execute("SELECT * FROM user_profiles WHERE lower(username)=lower(?)", (search,)).fetchone()
+                found = con.execute(
+                    "SELECT * FROM user_profiles WHERE lower(username)=lower(?)",
+                    (search,),
+                ).fetchone()
         if not found:
-            await update.effective_message.reply_text("⚠️ User not found. They must start the bot first.")
+            await update.effective_message.reply_text(
+                "⚠️ User not found.\nPlease check the username and try again."
+            )
             return
         target_id = int(found["user_id"])
+
     bot_user_id = storage.ensure_bot_user_id(target_id)
     with storage.connect() as con:
         profile = con.execute("SELECT * FROM user_profiles WHERE user_id=?", (target_id,)).fetchone()
     rows = storage.collection(target_id)
     cash, diamonds = storage.get_balance(target_id)
     name = (profile["first_name"] if profile else None) or str(target_id)
-    username = (profile["username"] if profile else None)
+    username = profile["username"] if profile else None
     text = (
-        f"👤 USER PROFILE\n\n🆔 User ID: {bot_user_id}\n👤 Name: {name}\n"
-        f"🔗 Username: @{username or 'N/A'}\n\n💰 Balance: {_fmt(cash)}\n"
-        f"💎 Diamonds: {_fmt(diamonds)}\n💖 Waifus Collected: {len(rows)} / {len(storage.list_waifus(limit=10000))}"
+        "👤 USER PROFILE\n\n"
+        f"🆔 User ID: {bot_user_id}\n"
+        f"👤 Name: {name}\n"
+        f"🔗 Username: @{username or 'N/A'}\n\n"
+        f"💰 Balance: {_fmt(cash)}\n"
+        f"💎 Diamonds: {_fmt(diamonds)}\n"
+        f"💖 Waifus Collected: {len(rows)} / {len(storage.list_waifus(limit=10000))}"
     )
+
+    image_ids = []
+    if profile and profile["profile_photo"]:
+        image_ids.append(profile["profile_photo"])
     if profile and profile["profile_waifu_id"]:
         w = storage.get_waifu(profile["profile_waifu_id"])
         if w:
-            text += f"\n\n🌸 Profile Waifu: {w['name']} | {w['rarity']} | {w['anime']}"
-    if profile and profile["profile_photo"]:
-        await update.effective_message.reply_photo(profile["profile_photo"], caption=text)
-    elif profile and profile["profile_waifu_id"]:
-        w = storage.get_waifu(profile["profile_waifu_id"])
-        if w:
-            if w["image_file_id"]:
-                await update.effective_message.reply_photo(w["image_file_id"], caption=text)
-            else:
-                await update.effective_message.reply_text(text)
-            return
-        await update.effective_message.reply_text(text)
-    else:
-        await update.effective_message.reply_text(text)
+            if w["image_file_id"] and w["image_file_id"] not in image_ids:
+                image_ids.append(w["image_file_id"])
+            text += (
+                "\n\n🌸 Profile Waifu:\n"
+                f"Name: {w['name']}\n"
+                f"Rarity: {RARITIES.get(w['rarity'], ('✨',))[0]} {w['rarity']}\n"
+                f"Anime: {w['anime']}"
+            )
+
+    for image_id in image_ids:
+        await update.effective_message.reply_photo(image_id)
+    await update.effective_message.reply_text(text)
 
 
 def _dmode_main_keyboard(uid: int):
@@ -1095,6 +1324,76 @@ async def dmode_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await q.edit_message_text(f"✅ Collection mode set to {mode}: {value}. Use /collection to view.")
 
 
+FIND_PAGE_SIZE = 10
+
+
+def _find_users_page(waifu_id: str, page: int):
+    offset = max(0, page) * FIND_PAGE_SIZE
+    with storage.connect() as con:
+        total_users = con.execute(
+            "SELECT COUNT(DISTINCT user_id) AS n FROM user_waifus WHERE waifu_id=?",
+            (waifu_id,),
+        ).fetchone()["n"]
+        rows = con.execute(
+            """SELECT uw.user_id,MIN(uw.obtained_at) AS obtained_at,
+            up.first_name,up.username,up.bot_user_id
+            FROM user_waifus uw
+            LEFT JOIN user_profiles up ON up.user_id=uw.user_id
+            WHERE uw.waifu_id=?
+            GROUP BY uw.user_id
+            ORDER BY MIN(uw.obtained_at) ASC
+            LIMIT ? OFFSET ?""",
+            (waifu_id, FIND_PAGE_SIZE, offset),
+        ).fetchall()
+    return total_users, rows, total_users
+
+
+def _find_caption(waifu, page: int):
+    total_users, rows, _ = _find_users_page(waifu["waifu_id"], page)
+    with storage.connect() as con:
+        total_picks = con.execute(
+            "SELECT COUNT(*) AS n FROM user_waifus WHERE waifu_id=?",
+            (waifu["waifu_id"],),
+        ).fetchone()["n"]
+    pages = max(1, (total_users + FIND_PAGE_SIZE - 1) // FIND_PAGE_SIZE)
+    emoji = RARITIES.get(waifu["rarity"], ("✨",))[0]
+    lines = [
+        "🌐 𝗖𝗛𝗔𝗥𝗔𝗖𝗧𝗘𝗥 𝗜𝗡𝗙𝗢:",
+        "┏━━━━━━━━━━━━━⧫",
+        f"✧𝗡𝗔𝗠𝗘: {waifu['name']} [{emoji}]",
+        f"✧𝗥𝗔𝗥𝗜𝗧𝗬: {waifu['rarity']} {emoji}",
+        f"✧𝗔𝗡𝗜𝗠𝗘: {waifu['anime']}",
+        f"✧𝗣𝗥𝗜𝗖𝗘: {_fmt(waifu['price'])}",
+        f"✧𝗜𝗗: {waifu['waifu_id']}",
+        f"✧𝗚𝗟𝗢𝗕𝗔𝗟𝗟𝗬 𝗣𝗜𝗖𝗞𝗘𝗗: {total_picks} Times...",
+        "┗━━━━━━━━━━━━━⧫",
+        "",
+        f"👥 𝗪𝗔𝗜𝗙𝗨 𝗢𝗪𝗡𝗘𝗥𝗦 — Page {page + 1}/{pages}",
+    ]
+    if rows:
+        for index, row in enumerate(rows, page * FIND_PAGE_SIZE + 1):
+            name = row["first_name"] or "Unknown"
+            username = f"@{row['username']}" if row["username"] else "No username"
+            public_id = row["bot_user_id"] or row["user_id"]
+            lines.append(f"{index}. {name} ({username}) | User ID: {public_id}")
+    else:
+        lines.append("No users currently own this waifu.")
+    return "\n".join(lines), pages
+
+
+def _find_keyboard(owner_id: int, waifu_id: str, page: int, pages: int):
+    previous_data = f"find:{owner_id}:{waifu_id}:{page - 1}" if page > 0 else "findnoop"
+    next_data = f"find:{owner_id}:{waifu_id}:{page + 1}" if page + 1 < pages else "findnoop"
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⬅ Previous", callback_data=previous_data),
+            InlineKeyboardButton(f"{page + 1}/{pages}", callback_data="findnoop"),
+            InlineKeyboardButton("Next ➡", callback_data=next_data),
+        ],
+        [InlineKeyboardButton("🗑 Discard", callback_data=f"finddel:{owner_id}")],
+    ])
+
+
 async def find_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
         await update.effective_message.reply_text("Usage: /find <waifu_id>")
@@ -1221,11 +1520,25 @@ async def f_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     w = storage.get_waifu(context.args[0])
     if not w:
-        await update.effective_message.reply_text("THIS ID IS NOT FOUND IN BOT DATABASE.")
+        await update.effective_message.reply_text("THIS ID IS NOT FOUND IN BOT DATA BASE.")
         return
     with storage.connect() as con:
-        picked = con.execute("SELECT COUNT(*) AS n FROM user_waifus WHERE waifu_id=?", (w["waifu_id"],)).fetchone()["n"]
-    caption = f"🌐 CHARACTER INFO\n{_display(w)}\n🌍 GLOBALLY PICKED: {picked} times..."
+        picked = con.execute(
+            "SELECT COUNT(*) AS n FROM user_waifus WHERE waifu_id=?",
+            (w["waifu_id"],),
+        ).fetchone()["n"]
+    emoji = RARITIES.get(w["rarity"], ("✨",))[0]
+    caption = (
+        "🌐 𝗖𝗛𝗔𝗥𝗔𝗖𝗧𝗘𝗥 𝗜𝗡𝗙𝗢:\n"
+        "┏━━━━━━━━━━━━━⧫\n"
+        f"✧𝗡𝗔𝗠𝗘: {w['name']} [{emoji}]\n"
+        f"✧𝗥𝗔𝗥𝗜𝗧𝗬: {w['rarity']} {emoji}\n"
+        f"✧𝗔𝗡𝗜𝗠𝗘: {w['anime']}\n"
+        f"✧𝗣𝗥𝗜𝗖𝗘: {_fmt(w['price'])}\n"
+        f"✧𝗜𝗗: {w['waifu_id']}\n"
+        f"✧𝗚𝗟𝗢𝗕𝗔𝗟𝗟𝗬 𝗣𝗜𝗖𝗞𝗘𝗗: {picked} Times...\n"
+        "┗━━━━━━━━━━━━━⧫"
+    )
     if w["image_file_id"]:
         await update.effective_message.reply_photo(w["image_file_id"], caption=caption)
     else:
@@ -1408,8 +1721,7 @@ async def sell_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             con.execute("UPDATE pending_actions SET status='cancelled' WHERE token=?", (token,))
             con.commit()
             await q.answer("Cancelled.")
-            await q.edit_message_text("❌ Sale cancelled.")
-            storage.set_cooldown(q.from_user.id, "sell", 60)
+            await q.edit_message_text("❌ Sale cancelled.\nNo changes were made.")
             return
         if pending["action"] == "sell_diamonds":
             amount = int(data["amount"])
@@ -1451,7 +1763,24 @@ async def sell_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         con.commit()
     storage.set_cooldown(q.from_user.id, "sell", 60)
     await q.answer("Sale completed.")
-    await q.edit_message_text(f"✅ SOLD SUCCESSFULLY\n💰 Cash added: {_fmt(cash_added)}")
+    await q.edit_message_text(
+        "✅ SOLD SUCCESSFULLY!\n\n"
+        f"💰 Cash Added: {_fmt(cash_added)}\n"
+        "Your collection and balance have been updated."
+    )
+
+
+async def _send_profile_waifu_confirmation(message, uid: int, w) -> None:
+    token = storage.create_pending(uid, "set_profile_waifu", {"waifu_id": w["waifu_id"]}, 60)
+    caption = f"✨ Are you sure you want to set {w['name']} as your profile?"
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Confirm", callback_data=f"setprofileok:{token}"),
+        InlineKeyboardButton("❌ Cancel", callback_data=f"setprofileno:{token}")
+    ]])
+    if w["image_file_id"]:
+        await message.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
+    else:
+        await message.reply_text(caption, reply_markup=keyboard)
 
 
 async def setprofile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1459,22 +1788,77 @@ async def setprofile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     msg = update.effective_message
     if context.args:
         wid = context.args[0]
-        w = storage.owned_waifu(uid, wid)
+        w = storage.get_waifu(wid)
         if not w:
-            await msg.reply_text("You don't own this waifu.")
+            await msg.reply_text("⚠️ Invalid Waifu ID.\nThis waifu does not exist in the bot database.")
             return
-        with storage.connect() as con:
-            con.execute("INSERT INTO user_profiles(user_id,profile_waifu_id,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET profile_waifu_id=excluded.profile_waifu_id,updated_at=excluded.updated_at", (uid, wid, storage.now()))
-        await msg.reply_text(f"💖 {w['name']} set as your profile waifu.")
+        if not storage.owned_waifu(uid, wid):
+            await msg.reply_text("😔 You don't own this waifu.\nPlease select a waifu from your collection.")
+            return
+        await _send_profile_waifu_confirmation(msg, uid, w)
         return
+
     reply = msg.reply_to_message
     if reply and reply.photo:
+        caption = reply.caption or reply.text or ""
+        match = re.search(r"(?:🆔\s*)?(?:ID)\s*[:#]?\s*(\d{4})", caption, re.I)
+        if match:
+            wid = match.group(1)
+            w = storage.get_waifu(wid)
+            if not w:
+                await msg.reply_text("⚠️ Invalid Waifu ID.\nThis waifu does not exist in the bot database.")
+                return
+            if not storage.owned_waifu(uid, wid):
+                await msg.reply_text("😔 You don't own this waifu.\nPlease select a waifu from your collection.")
+                return
+            await _send_profile_waifu_confirmation(msg, uid, w)
+            return
+
         file_id = reply.photo[-1].file_id
         with storage.connect() as con:
-            con.execute("INSERT INTO user_profiles(user_id,profile_photo,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET profile_photo=excluded.profile_photo,updated_at=excluded.updated_at", (uid, file_id, storage.now()))
-        await msg.reply_text("💖 Profile photo updated.")
+            con.execute(
+                """INSERT INTO user_profiles(user_id,profile_photo,updated_at)
+                VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+                profile_photo=excluded.profile_photo,updated_at=excluded.updated_at""",
+                (uid, file_id, storage.now())
+            )
+        await msg.reply_text("📸 Profile photo updated successfully!")
         return
-    await msg.reply_text("Usage: /setprofile <owned_waifu_id>, or reply to a photo with /setprofile.")
+
+    await msg.reply_text("⚠️ Please reply to a valid waifu image or photo.")
+
+
+async def setprofile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    action, token = q.data.split(":", 1)
+    pending = storage.get_pending(token, q.from_user.id, "set_profile_waifu")
+    if not pending:
+        await q.answer("This profile request has expired or does not belong to you.", show_alert=True)
+        return
+    data = __import__("json").loads(pending["payload"])
+    if action == "setprofileno":
+        storage.finish_pending(token, "cancelled")
+        await q.answer()
+        await _edit_photo_or_text(q, "❌ Profile update cancelled.")
+        return
+    w = storage.owned_waifu(q.from_user.id, data["waifu_id"])
+    if not w:
+        await q.answer("You no longer own this waifu.", show_alert=True)
+        return
+    storage.ensure_bot_user_id(q.from_user.id)
+    with storage.connect() as con:
+        con.execute(
+            """INSERT INTO user_profiles(user_id,profile_waifu_id,updated_at)
+            VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+            profile_waifu_id=excluded.profile_waifu_id,updated_at=excluded.updated_at""",
+            (q.from_user.id, w["waifu_id"], storage.now())
+        )
+    storage.finish_pending(token, "done")
+    await q.answer("Profile updated successfully.")
+    await _edit_photo_or_text(
+        q,
+        "💖 Profile Updated Successfully!\nYour waifu has been set as your profile."
+    )
 
 
 async def dupload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1486,15 +1870,25 @@ async def dupload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # The image caption may contain an ID line.
         match = re.search(r"ID:\s*(\d{4})", msg.reply_to_message.caption or "", re.I)
         wid = match.group(1) if match else None
-    if not wid:
-        await msg.reply_text("Usage: /dupload <4-digit-waifu_id>")
+    if not wid or not re.fullmatch(r"\d{4}", str(wid)):
+        await msg.reply_text(
+            "❌ INVALID DUPLOAD COMMAND\n\n"
+            "Correct Usage:\n• /dupload 0001\n• Reply to a waifu message → /dupload"
+        )
         return
     w = storage.get_waifu(wid)
     if not w:
-        await msg.reply_text("Waifu not found.")
+        await msg.reply_text(
+            "❌ WAIFU NOT FOUND\n\nThis waifu does not exist in the database or is already deleted."
+        )
         return
     token = storage.create_pending(update.effective_user.id, "delete_waifu", {"waifu_id": wid}, 60)
-    caption = f"Delete {w['name']} ({wid}) from the catalogue and all collections?"
+    caption = (
+        "⚠️ CONFIRM WAIFU DELETION\n\n"
+        f"🧩 Name: {w['name']}\n🆔 ID: {wid}\n"
+        f"🵿 Rarity: {w['rarity']}\n🎬 Anime: {w['anime']}\n\n"
+        "This will remove the waifu from the bot database and every user's collection."
+    )
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Confirm Delete", callback_data=f"delok:{token}"), InlineKeyboardButton("Cancel", callback_data=f"delno:{token}")]])
     if w["image_file_id"]:
         await msg.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
@@ -1538,8 +1932,9 @@ async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         con.commit()
     await q.answer("Deleted.")
     await _edit_photo_or_text(
-        q, f"✅ WAIFU DELETED SUCCESSFULLY\n\n{waifu['name']}\n🆔 {wid}\n"
-        "Removed from catalogue and all user collections. Action logged."
+        q, f"✅ WAIFU DELETED SUCCESSFULLY\n\n"
+        f"🧩 {waifu['name']}\n🆔 ID: {wid}\n"
+        "Removed from the bot database and all user collections. The deletion has been logged."
     )
     info = _display(waifu)
     for user_id in affected:
@@ -1644,11 +2039,15 @@ async def spawn_expiry_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         w = storage.get_waifu(wid)
         if not w:
             continue
+        emoji = RARITIES.get(w["rarity"], ("✨",))[0]
+        escaped = (
+            "❌ ᴛᴏᴏ ꜱʟᴏᴡ! ᴛʜᴇ ᴄʜᴀʀᴀᴄᴛᴇʀ ᴇꜱᴄᴀᴘᴇᴅ! 🏃‍♀️✨\n\n"
+            f"🌸 ɴᴀᴍᴇ: {w['name']}\n"
+            f"💠 ᴀɴɪᴍᴇ: {w['anime']}\n"
+            f"✨ ʀᴀʀɪᴛʏ: {emoji} {w['rarity']}\n"
+            f"🆔 ɪᴅ: {w['waifu_id']}"
+        )
         try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"❌ TOO SLOW! The character escaped!\n\n{_display(w)}"
-            )
+            await context.bot.send_message(chat_id=chat_id, text=escaped)
         except Exception:
             pass
-

@@ -10,7 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from . import storage
-from .waifu_handlers import _owner, _sudo, _uploader, _display
+from .waifu_handlers import RARITIES, _fmt, _owner, _sudo, _uploader, _display
 
 
 async def trade_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -144,6 +144,9 @@ async def give_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.args and context.args[0].lower() == "history":
         if not _owner(uid):
             return
+        if not replied_user or not (_sudo(replied_user.id) or _uploader(replied_user.id)):
+            await msg.reply_text("Reply to a Sudo or Uploader user with /give history.")
+            return
         with storage.connect() as con:
             if replied_user:
                 rows = con.execute(
@@ -155,7 +158,7 @@ async def give_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     "SELECT actor_id,target_id,waifu_id,created_at FROM transactions WHERE action='admin_gift' ORDER BY created_at DESC LIMIT 30"
                 ).fetchall()
         if not rows:
-            await msg.reply_text("📭 No give history found.")
+            await msg.reply_text("📭 No give history found for this user.")
             return
         with storage.connect() as con:
             actor_profile = con.execute("SELECT first_name,username FROM user_profiles WHERE user_id=?", (replied_user.id,)).fetchone() if replied_user else None
@@ -170,7 +173,13 @@ async def give_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await msg.reply_text("\n".join(lines))
         return
     if not context.args or not context.args[0].isdigit():
-        await msg.reply_text("📦 GIVE WAIFU — USAGE GUIDE\nReply to a user: /give <waifu_id>\nUsing username or user ID: /give <waifu_id> @username_or_id")
+        await msg.reply_text(
+            "📦 GIVE WAIFU — USAGE GUIDE\n\n"
+            "• Reply to a user: /give <waifu_id>\n"
+            "• Using username: /give <waifu_id> @username\n"
+            "• Using User ID: /give <waifu_id> <user_id>\n\n"
+            "Only Owner / Sudo / Uploader can use this command."
+        )
         return
     target_id = None
     target_name = None
@@ -187,10 +196,14 @@ async def give_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             target_id = int(target["user_id"])
             target_name = target["first_name"] or (f"@{target['username']}" if target["username"] else str(target_id))
     if target_id is None:
-        await msg.reply_text("⚠️ User not found. Reply to their message or use a username/user ID already known to the bot.")
+        await msg.reply_text("⚠️ User not found.\nPlease check the username or ID.")
         return
     if target_id == uid and not _owner(uid):
-        await msg.reply_text("🚫 SUDO users and Uploaders cannot gift characters to themselves.")
+        await msg.reply_text(
+            "🚫 ACTION NOT ALLOWED\n\n"
+            "You cannot gift a waifu to yourself.\n"
+            "This command is meant for gifting other users only."
+        )
         return
     if storage.owned_waifu(target_id, context.args[0]):
         await msg.reply_text("⚠️ This user already owns this waifu. Duplicate gifting is not allowed.")
@@ -224,7 +237,7 @@ async def give_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if action == "givno":
         storage.finish_pending(token, "cancelled")
         await q.answer("Gift cancelled.")
-        await _edit_photo_or_text(q, "Gift cancelled.")
+        await _edit_photo_or_text(q, "❌ Gift cancelled.\nNo changes were made.")
         return
     w = storage.get_waifu(data["waifu_id"])
     if not w:
@@ -248,14 +261,29 @@ async def give_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         con.commit()
     await q.answer("Gift sent.")
-    await _edit_photo_or_text(q, "🎉 Gift successfully sent.")
+    await _edit_photo_or_text(
+        q,
+        "🎉 WAIFU GIFTED SUCCESSFULLY!\n\n"
+        "The waifu has been added to the user's collection.\n"
+        "Gift completed without errors."
+    )
     try:
         if w["image_file_id"]:
-            await context.bot.send_photo(
-                data["target_id"], w["image_file_id"],
-                caption=f"🎁 You received a waifu gift!\n{_display(w)}\nAdded to your /collection."
-            )
-        else:
-            await context.bot.send_message(data["target_id"], f"🎁 You received a waifu gift!\n{_display(w)}\nAdded to your /collection.")
+            await context.bot.send_photo(data["target_id"], w["image_file_id"])
+        rarity_emoji = RARITIES.get(w["rarity"], ("✨",))[0]
+        receiver_message = (
+            "🎁 YOU RECEIVED A WAIFU!\n\n"
+            "🌐 CHARACTER INFO:\n"
+            "┏━━━━━━━━━━━━━⧫\n"
+            f"✧ NAME: {w['name']} [{rarity_emoji}]\n"
+            f"✧ RARITY: {w['rarity']}\n"
+            f"✧ ANIME: {w['anime']}\n"
+            f"✧ PRICE: {_fmt(w['price'])}\n"
+            f"✧ ID: {w['waifu_id']}\n"
+            "┗━━━━━━━━━━━━━⧫\n\n"
+            "This waifu has been added to your collection 💖\n"
+            "Take good care of her!"
+        )
+        await context.bot.send_message(data["target_id"], receiver_message)
     except Exception:
         pass
