@@ -155,6 +155,8 @@ def _parse_upload_details(raw: str) -> dict:
         )
         if match:
             key, value = match.group(1).lower(), match.group(2).strip()
+            if key == "anime" and value.casefold() == "name":
+                value = ""
             if not value and i + 1 < len(lines):
                 next_line = lines[i + 1]
                 if not re.match(
