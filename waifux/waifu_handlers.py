@@ -1127,17 +1127,14 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         f"💖 Waifus Collected: {len(rows)} / {len(storage.list_waifus(limit=10000))}"
     )
 
-    image_file_id = None
+    image_ids = []
     if profile and profile["profile_photo"]:
-        image_file_id = profile["profile_photo"]
-    elif profile and profile["profile_waifu_id"]:
-        w = storage.get_waifu(profile["profile_waifu_id"])
-        if w:
-            image_file_id = w["image_file_id"]
-
+        image_ids.append(profile["profile_photo"])
     if profile and profile["profile_waifu_id"]:
         w = storage.get_waifu(profile["profile_waifu_id"])
         if w:
+            if w["image_file_id"] and w["image_file_id"] not in image_ids:
+                image_ids.append(w["image_file_id"])
             text += (
                 "\n\n🌸 Profile Waifu:\n"
                 f"Name: {w['name']}\n"
@@ -1145,8 +1142,8 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 f"Anime: {w['anime']}"
             )
 
-    if image_file_id:
-        await update.effective_message.reply_photo(image_file_id)
+    for image_id in image_ids:
+        await update.effective_message.reply_photo(image_id)
     await update.effective_message.reply_text(text)
 
 
@@ -1689,70 +1686,62 @@ async def sell_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
+async def _send_profile_waifu_confirmation(message, uid: int, w) -> None:
+    token = storage.create_pending(uid, "set_profile_waifu", {"waifu_id": w["waifu_id"]}, 60)
+    caption = f"✨ Are you sure you want to set {w['name']} as your profile?"
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Confirm", callback_data=f"setprofileok:{token}"),
+        InlineKeyboardButton("❌ Cancel", callback_data=f"setprofileno:{token}")
+    ]])
+    if w["image_file_id"]:
+        await message.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
+    else:
+        await message.reply_text(caption, reply_markup=keyboard)
+
+
 async def setprofile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     msg = update.effective_message
     if context.args:
         wid = context.args[0]
-        w = storage.owned_waifu(uid, wid)
+        w = storage.get_waifu(wid)
         if not w:
-            await msg.reply_text("You don't own this waifu.")
+            await msg.reply_text("⚠️ Invalid Waifu ID.\nThis waifu does not exist in the bot database.")
             return
-        token = storage.create_pending(uid, "set_profile_waifu", {"waifu_id": w["waifu_id"]}, 60)
-        caption = f"Do you want to set {w['name']} as your profile waifu?\n\n{_display(w)}"
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Confirm", callback_data=f"setprofileok:{token}"),
-            InlineKeyboardButton("❌ Cancel", callback_data=f"setprofileno:{token}")
-        ]])
-        if w["image_file_id"]:
-            await msg.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
-        else:
-            await msg.reply_text(caption, reply_markup=keyboard)
+        if not storage.owned_waifu(uid, wid):
+            await msg.reply_text("😔 You don't own this waifu.\nPlease select a waifu from your collection.")
+            return
+        await _send_profile_waifu_confirmation(msg, uid, w)
         return
 
     reply = msg.reply_to_message
     if reply and reply.photo:
+        caption = reply.caption or reply.text or ""
+        match = re.search(r"(?:🆔\s*)?(?:ID)\s*[:#]?\s*(\d{4})", caption, re.I)
+        if match:
+            wid = match.group(1)
+            w = storage.get_waifu(wid)
+            if not w:
+                await msg.reply_text("⚠️ Invalid Waifu ID.\nThis waifu does not exist in the bot database.")
+                return
+            if not storage.owned_waifu(uid, wid):
+                await msg.reply_text("😔 You don't own this waifu.\nPlease select a waifu from your collection.")
+                return
+            await _send_profile_waifu_confirmation(msg, uid, w)
+            return
+
         file_id = reply.photo[-1].file_id
         with storage.connect() as con:
             con.execute(
-                """INSERT INTO user_profiles(user_id,profile_photo,profile_waifu_id,updated_at)
-                VALUES (?,?,NULL,?) ON CONFLICT(user_id) DO UPDATE SET
-                profile_photo=excluded.profile_photo,profile_waifu_id=NULL,updated_at=excluded.updated_at""",
+                """INSERT INTO user_profiles(user_id,profile_photo,updated_at)
+                VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+                profile_photo=excluded.profile_photo,updated_at=excluded.updated_at""",
                 (uid, file_id, storage.now())
             )
         await msg.reply_text("📸 Profile photo updated successfully!")
         return
-    await msg.reply_text("Usage: /setprofile <owned_waifu_id>, or reply to a photo with /setprofile.")
 
-
-async def setprofile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    q = update.callback_query
-    action, token = q.data.split(":", 1)
-    pending = storage.get_pending(token, q.from_user.id, "set_profile_waifu")
-    if not pending:
-        await q.answer("This profile request has expired or does not belong to you.", show_alert=True)
-        return
-    import json
-    data = json.loads(pending["payload"])
-    if action == "setprofileno":
-        storage.finish_pending(token, "cancelled")
-        await q.answer("Profile update cancelled.")
-        await _edit_photo_or_text(q, "❌ Profile update cancelled.")
-        return
-    w = storage.owned_waifu(q.from_user.id, data["waifu_id"])
-    if not w:
-        await q.answer("You no longer own this waifu.", show_alert=True)
-        return
-    with storage.connect() as con:
-        con.execute(
-            """INSERT INTO user_profiles(user_id,profile_waifu_id,profile_photo,updated_at)
-            VALUES (?,?,NULL,?) ON CONFLICT(user_id) DO UPDATE SET
-            profile_waifu_id=excluded.profile_waifu_id,profile_photo=NULL,updated_at=excluded.updated_at""",
-            (q.from_user.id, w["waifu_id"], storage.now())
-        )
-    storage.finish_pending(token, "done")
-    await q.answer("Profile updated successfully.")
-    await _edit_photo_or_text(q, f"💖 Profile Updated Successfully!\n\n{_display(w)}")
+    await msg.reply_text("⚠️ Please reply to a valid waifu image or photo.")
 
 
 async def dupload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
