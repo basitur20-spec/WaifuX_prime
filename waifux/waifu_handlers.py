@@ -137,18 +137,67 @@ def _random_waifu(rarities: list[str] | None = None, respect_spawn_settings: boo
 
 
 def _parse_upload_details(raw: str) -> dict:
+    """Accept the documented label/value formats and the legacy comma format."""
+    raw = re.sub(r"^\s*/upload(?:@\w+)?\s*", "", raw or "", flags=re.I).strip()
+    if not raw:
+        return {}
+
+    labels = {"name", "rarity", "anime", "price", "id", "aliases"}
     data = {}
-    for line in raw.splitlines():
-        match = re.match(r"\s*(name|rarity|anime|price|id|aliases)\s*[:=]?\s+(.+?)\s*$", line, re.I)
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        match = re.match(
+            r"^(name|rarity|anime|price|id|aliases)\s*(?:\([^)]*\))?\s*(?::|=)?\s*(.*?)\s*$",
+            line,
+            re.I,
+        )
         if match:
-            data[match.group(1).lower()] = match.group(2).strip()
-    # Also accept the documented three-line plain format.
-    if not data:
-        lines = [line.strip() for line in raw.splitlines() if line.strip()]
-        if len(lines) >= 3:
-            data = {"name": lines[0], "rarity": lines[1], "anime": lines[2]}
-            if len(lines) >= 4:
-                data["price"] = lines[3]
+            key, value = match.group(1).lower(), match.group(2).strip()
+            if not value and i + 1 < len(lines):
+                next_line = lines[i + 1]
+                if not re.match(
+                    r"^(?:name|rarity|anime|price|id|aliases)\s*(?:\([^)]*\))?\s*(?::|=)?(?:\s|$)",
+                    next_line,
+                    re.I,
+                ):
+                    value = next_line
+                    i += 1
+            if value:
+                data[key] = value
+        i += 1
+
+    if data:
+        return data
+
+    # Older syntax: /upload 38429,Name,Anime,Rarity[,Price]
+    comma_parts = [part.strip() for part in raw.replace("\n", ",").split(",") if part.strip()]
+    if len(comma_parts) >= 4 and comma_parts[0].isdigit():
+        data = {
+            "id": comma_parts[0],
+            "name": comma_parts[1],
+            "anime": comma_parts[2],
+            "rarity": comma_parts[3],
+        }
+        if len(comma_parts) >= 5:
+            data["price"] = comma_parts[4]
+        return data
+    if len(comma_parts) >= 3:
+        data = {
+            "name": comma_parts[0],
+            "anime": comma_parts[1],
+            "rarity": comma_parts[2],
+        }
+        if len(comma_parts) >= 4:
+            data["price"] = comma_parts[3]
+        return data
+
+    # Short plain format: Name, Rarity, Anime, optional Price.
+    if len(lines) >= 3:
+        data = {"name": lines[0], "rarity": lines[1], "anime": lines[2]}
+        if len(lines) >= 4:
+            data["price"] = lines[3]
     return data
 
 
@@ -226,13 +275,25 @@ async def upload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await msg.reply_text(f"❌ Upload rejected: {exc}")
         return
     w = storage.get_waifu(wid)
-    await msg.reply_photo(
-        photo=photo.file_id,
-        caption=f"🌐 CHARACTER INFO\n{_display(w)}\n\n🎉 Upload Successful!\n"
-                f"You earned +{_fmt(reward)} coins (3% uploader bonus)."
-                + (f"\n\nAuto-corrected:\n" + "\n".join(corrections) if corrections else "")
-                + (f"\nQuality-based price: {_fmt(price)}" if not data.get("price") else "")
+    rarity_emoji = RARITIES[rarity][0]
+    success_caption = (
+        "🌐 CHARACTER INFO:\n"
+        "┏━━━━━━━━━━━━━⧫\n"
+        f"✧ NAME: {w['name']} [{rarity_emoji}]\n"
+        f"✧ RARITY: {w['rarity']} {rarity_emoji}\n"
+        f"✧ ANIME: {w['anime']}\n"
+        f"✧ PRICE: {_fmt(w['price'])}\n"
+        f"✧ ID: {w['waifu_id']}\n"
+        "┗━━━━━━━━━━━━━⧫\n\n"
+        "🎉 Upload Successful!\n"
+        "This waifu has been added to the global database.\n"
+        f"You earned +{_fmt(reward)} coins (3%)."
     )
+    if not data.get("price"):
+        success_caption += "\n\nℹ️ Price Auto-Set by System\nPrice was automatically calculated based on image quality."
+    if data.get("id"):
+        success_caption += "\nManual ID has been registered successfully."
+    await msg.reply_photo(photo=photo.file_id, caption=success_caption)
     channel_id = os.getenv("WAIFU_CHANNEL_ID")
     if channel_id:
         try:
