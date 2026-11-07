@@ -603,6 +603,11 @@ async def waifu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
             else:
                 await _edit_photo_or_text(q, f"❤️ {w['name']} is now your favourite.")
+                if w["image_file_id"]:
+                    await q.message.reply_photo(
+                        w["image_file_id"],
+                        caption=f"❤️ YOUR FAVOURITE WAIFU\n{_display(w)}",
+                    )
                 rows = storage.collection(q.from_user.id)
                 await _send_collection(q.message, q.from_user.id, 0, rows, q.from_user.id)
 
