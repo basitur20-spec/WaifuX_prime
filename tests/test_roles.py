@@ -94,3 +94,23 @@ def test_owner_bypasses_staff_command_guard(tmp_path):
     asyncio.run(guarded(owner_update, None))
     asyncio.run(guarded(uploader_update, None))
     assert called == [8163432539]
+
+
+
+def test_sudo_and_uploader_guides_list_only_their_assigned_commands():
+    from legacy import partial_commands as legacy
+
+    sudo_text = legacy.build_sudo_commands_text()
+    uploader_text = legacy.build_uploader_commands_text()
+
+    assert "/auction" in sudo_text
+    assert "/gen" in sudo_text
+    assert "/dgen" in sudo_text
+    assert "/dupload" not in sudo_text
+    assert "/upload" not in sudo_text
+
+    assert "/upload" in uploader_text
+    assert "/dgen" in uploader_text
+    assert "/dupload" in uploader_text
+    assert "/auction" not in uploader_text
+    assert "/gen" not in uploader_text
