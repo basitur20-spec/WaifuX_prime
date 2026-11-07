@@ -55,6 +55,14 @@ OWNER_ID = 0
 MESSAGE_COUNTS = defaultdict(int)
 RECENT_MESSAGES = defaultdict(deque)
 RARITY_ORDER = list(RARITIES)
+DAILY_WAIFU_WEIGHTS = {
+    "Starter": 50,
+    "Rising": 50,
+    "Shiny": 50,
+    "Ultimate": 50,
+    "RoyalArc": 5,
+}
+MARRIAGE_REWARD_WEIGHTS = {"Shiny": 50, "Ultimate": 50}
 
 
 def configure(owner_id: int) -> None:
@@ -620,13 +628,7 @@ async def inline_collection(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def waifu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
-    daily_weights = {
-        "Starter": 50,
-        "Rising": 50,
-        "Shiny": 50,
-        "Ultimate": 50,
-        "RoyalArc": 5,
-    }
+    daily_weights = DAILY_WAIFU_WEIGHTS
     w = _random_waifu(list(daily_weights), weights=daily_weights)
     if not w:
         await update.effective_message.reply_text("No waifus are currently available in the daily reward pool.")
@@ -778,8 +780,8 @@ async def spawn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.effective_message.reply_text("Usage: /spawn <rarity> on/off")
         return
     rarity, status = _rarity_name(context.args[0]), context.args[1].lower()
-    if not rarity or status not in {"on", "off"}:
-        await update.effective_message.reply_text("Invalid rarity or on/off value.")
+    if not rarity or RARITY_WEIGHTS.get(rarity, 0) <= 0 or status not in {"on", "off"}:
+        await update.effective_message.reply_text("Invalid or non-spawnable rarity. Use one of the 15 configured spawn rarities and choose on/off.")
         return
     with storage.connect() as con:
         con.execute(
@@ -822,7 +824,7 @@ async def marriage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if left:
             con.rollback()
             minutes, seconds = divmod(left, 60)
-            await update.effective_message.reply_text(f"⏳ Try again in {minutes}m {seconds}s.")
+            await update.effective_message.reply_text(f"⏳ ʏᴏᴜ ᴄᴀɴ ᴜꜱᴇ /marriage ᴀɢᴀɪɴ ɪɴ {minutes:02d}ᴍ {seconds:02d}ꜱ.")
             return
         con.execute("INSERT INTO cooldowns(user_id,action,expires_at) VALUES (?,?,?) ON CONFLICT(user_id,action) DO UPDATE SET expires_at=excluded.expires_at", (uid, "marriage", storage.now()+3600))
         con.commit()
@@ -831,7 +833,7 @@ async def marriage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             f"{update.effective_user.first_name}, ʏᴏᴜʀ ᴍᴀʀʀɪᴀɢᴇ ᴘʀᴏᴘᴏꜱᴀʟ ᴡᴀꜱ ʀᴇᴊᴇᴄᴛᴇᴅ ᴀɴᴅ ꜱʜᴇ ʀᴀɴ ᴀᴡᴀʏ! 🤡"
         )
         return
-    w = _random_waifu(["Shiny", "Ultimate"], weights={"Shiny": 50, "Ultimate": 50})
+    w = _random_waifu(["Shiny", "Ultimate"], weights=MARRIAGE_REWARD_WEIGHTS)
     if not w:
         await update.effective_message.reply_text("No waifus are currently available for marriage rewards.")
         return
