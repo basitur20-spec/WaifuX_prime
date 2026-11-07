@@ -24,8 +24,8 @@ The bot reads the single configured `OWNER_ID` from Replit Secrets and persisten
 | Role | Commands |
 |---|---|
 | Owner | Unrestricted access to every registered command, plus all Owner, Sudo and Uploader controls |
-| Sudo | `/auction`, `/auction users`, `/gen`, `/dgen`, `/changetime`, `/dupload`, `/give`, `/dtops`, `/sudolist`, `/sudocommands` |
-| Uploader | `/upload`, `/auction`, `/auction users`, `/dgen`, `/dupload`, `/give`, `/dtops`, `/uploaderlist`, `/uploadercommands` |
+| Sudo | `/auction`, `/auction users`, `/gen`, `/dgen`, `/changetime`, `/give`, `/dtops`, `/sudolist`, `/sudocommands` |
+| Uploader | `/upload`, `/dgen`, `/dupload`, `/give`, `/dtops`, `/uploaderlist`, `/uploadercommands` |
 | Owner only | `/addsudo`, `/rsudo`, `/adduploader`, `/ruploader`, `/bonusrefresh`, `/payrefresh`, `/marketspawn`, `/spawn`, `/redeemtoggle`, `/dredeemtoggle`, `/gclaim`, `/send`, `/stop`, `/run` |
 
 Notes:
