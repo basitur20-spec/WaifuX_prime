@@ -10,7 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from . import storage
-from .waifu_handlers import _owner, _sudo, _uploader, _display
+from .waifu_handlers import RARITIES, _fmt, _owner, _sudo, _uploader, _display
 
 
 async def trade_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
