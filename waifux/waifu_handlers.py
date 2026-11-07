@@ -1094,42 +1094,60 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         search = context.args[0].lstrip("@")
         with storage.connect() as con:
             if search.isdigit():
-                found = con.execute("SELECT * FROM user_profiles WHERE bot_user_id=? OR user_id=?", (search, int(search))).fetchone()
+                found = con.execute(
+                    "SELECT * FROM user_profiles WHERE bot_user_id=? OR user_id=?",
+                    (search, int(search)),
+                ).fetchone()
             else:
-                found = con.execute("SELECT * FROM user_profiles WHERE lower(username)=lower(?)", (search,)).fetchone()
+                found = con.execute(
+                    "SELECT * FROM user_profiles WHERE lower(username)=lower(?)",
+                    (search,),
+                ).fetchone()
         if not found:
-            await update.effective_message.reply_text("⚠️ User not found. They must start the bot first.")
+            await update.effective_message.reply_text(
+                "⚠️ User not found.\nPlease check the username and try again."
+            )
             return
         target_id = int(found["user_id"])
+
     bot_user_id = storage.ensure_bot_user_id(target_id)
     with storage.connect() as con:
         profile = con.execute("SELECT * FROM user_profiles WHERE user_id=?", (target_id,)).fetchone()
     rows = storage.collection(target_id)
     cash, diamonds = storage.get_balance(target_id)
     name = (profile["first_name"] if profile else None) or str(target_id)
-    username = (profile["username"] if profile else None)
+    username = profile["username"] if profile else None
     text = (
-        f"👤 USER PROFILE\n\n🆔 User ID: {bot_user_id}\n👤 Name: {name}\n"
-        f"🔗 Username: @{username or 'N/A'}\n\n💰 Balance: {_fmt(cash)}\n"
-        f"💎 Diamonds: {_fmt(diamonds)}\n💖 Waifus Collected: {len(rows)} / {len(storage.list_waifus(limit=10000))}"
+        "👤 USER PROFILE\n\n"
+        f"🆔 User ID: {bot_user_id}\n"
+        f"👤 Name: {name}\n"
+        f"🔗 Username: @{username or 'N/A'}\n\n"
+        f"💰 Balance: {_fmt(cash)}\n"
+        f"💎 Diamonds: {_fmt(diamonds)}\n"
+        f"💖 Waifus Collected: {len(rows)} / {len(storage.list_waifus(limit=10000))}"
     )
-    if profile and profile["profile_waifu_id"]:
-        w = storage.get_waifu(profile["profile_waifu_id"])
-        if w:
-            text += f"\n\n🌸 Profile Waifu: {w['name']} | {w['rarity']} | {w['anime']}"
+
+    image_file_id = None
     if profile and profile["profile_photo"]:
-        await update.effective_message.reply_photo(profile["profile_photo"], caption=text)
+        image_file_id = profile["profile_photo"]
     elif profile and profile["profile_waifu_id"]:
         w = storage.get_waifu(profile["profile_waifu_id"])
         if w:
-            if w["image_file_id"]:
-                await update.effective_message.reply_photo(w["image_file_id"], caption=text)
-            else:
-                await update.effective_message.reply_text(text)
-            return
-        await update.effective_message.reply_text(text)
-    else:
-        await update.effective_message.reply_text(text)
+            image_file_id = w["image_file_id"]
+
+    if profile and profile["profile_waifu_id"]:
+        w = storage.get_waifu(profile["profile_waifu_id"])
+        if w:
+            text += (
+                "\n\n🌸 Profile Waifu:\n"
+                f"Name: {w['name']}\n"
+                f"Rarity: {RARITIES.get(w['rarity'], ('✨',))[0]} {w['rarity']}\n"
+                f"Anime: {w['anime']}"
+            )
+
+    if image_file_id:
+        await update.effective_message.reply_photo(image_file_id)
+    await update.effective_message.reply_text(text)
 
 
 def _dmode_main_keyboard(uid: int):
