@@ -495,7 +495,7 @@ async def _send_fav_confirmation(message, uid: int, wid: str):
         InlineKeyboardButton("COLLECTION", callback_data=f"favconfirm:{token}"),
         InlineKeyboardButton("CANCEL", callback_data=f"favcancel:{token}")
     ]])
-    caption = f"Do you really want to set {w['name']} as your favourite waifu?"
+    caption = f"ᴅᴏ ʏᴏᴜ ʀᴇᴀʟʟʏ ᴡᴀɴᴛ ᴛᴏ ꜱᴇᴛ ({w['name']}) ᴀꜱ ʏᴏᴜʀ ꜰᴀᴠᴏʀɪᴛᴇ ᴡᴀɪꜰᴜ?"
     if w["image_file_id"]:
         await message.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
     else:
@@ -598,7 +598,7 @@ async def waifu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await _edit_photo_or_text(
                     q, f"❤️ {w['name']} is now your favourite. Open inline mode:",
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("Open Inline Collection", switch_inline_query_current_chat=f"waifu {w['name']}")
+                        InlineKeyboardButton("OPEN CHARACTER INLINE", switch_inline_query_current_chat=f"waifu {w['name']} rarity:{w['rarity']}")
                     ]])
                 )
             else:
@@ -611,17 +611,44 @@ async def inline_collection(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     from telegram import InlineQueryResultCachedPhoto
     query = update.inline_query
     term = query.query.strip()
-    rows = [w for w in _collection_for_user(query.from_user.id) if w['image_file_id']]
-    if term:
-        bits = term.split(maxsplit=1)
-        term = bits[1] if len(bits) == 2 and bits[0].lower() == "waifu" else term
-        rows = [w for w in rows if term.casefold() in w["name"].casefold() or term.casefold() in w["anime"].casefold()]
+    global_catalogue = term.casefold().startswith("waifu ")
+    rarity_filter = None
+
+    if global_catalogue:
+        term = term[6:].strip()
+        rarity_match = re.search(r"\s+rarity:([a-z0-9]+)\s*$", term, re.I)
+        if rarity_match:
+            rarity_filter = rarity_match.group(1).casefold()
+            term = term[:rarity_match.start()].strip()
+        rows = storage.list_waifus(limit=10000)
+        if rarity_filter:
+            rows = [w for w in rows if w["rarity"].casefold() == rarity_filter]
+        if term:
+            def character_matches(w):
+                aliases = __import__("json").loads(w.get("aliases") or "[]")
+                return any(
+                    term.casefold() in str(name).casefold()
+                    for name in [w["name"], *aliases]
+                )
+            rows = [w for w in rows if character_matches(w)]
+    else:
+        rows = [w for w in _collection_for_user(query.from_user.id) if w["image_file_id"]]
+        if term:
+            rows = [
+                w for w in rows
+                if term.casefold() in w["name"].casefold()
+                or term.casefold() in w["anime"].casefold()
+            ]
+
     results = [
         InlineQueryResultCachedPhoto(
-            id=f"{w['waifu_id']}-{i}", photo_file_id=w["image_file_id"],
-            title=w["name"], description=f"{w['rarity']} | {w['anime']}"
+            id=f"{w['waifu_id']}-{i}",
+            photo_file_id=w["image_file_id"],
+            title=w["name"],
+            description=f"{w['rarity']} | {w['anime']}",
         )
         for i, w in enumerate(rows[:50])
+        if w.get("image_file_id")
     ]
     await query.answer(results, cache_time=1, is_personal=True)
 
