@@ -1463,22 +1463,65 @@ async def setprofile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if not w:
             await msg.reply_text("You don't own this waifu.")
             return
-        with storage.connect() as con:
-            con.execute("INSERT INTO user_profiles(user_id,profile_waifu_id,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET profile_waifu_id=excluded.profile_waifu_id,updated_at=excluded.updated_at", (uid, wid, storage.now()))
-        await msg.reply_text(f"💖 {w['name']} set as your profile waifu.")
+        token = storage.create_pending(uid, "set_profile_waifu", {"waifu_id": w["waifu_id"]}, 60)
+        caption = f"Do you want to set {w['name']} as your profile waifu?\n\n{_display(w)}"
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Confirm", callback_data=f"setprofileok:{token}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"setprofileno:{token}")
+        ]])
+        if w["image_file_id"]:
+            await msg.reply_photo(w["image_file_id"], caption=caption, reply_markup=keyboard)
+        else:
+            await msg.reply_text(caption, reply_markup=keyboard)
         return
+
     reply = msg.reply_to_message
     if reply and reply.photo:
         file_id = reply.photo[-1].file_id
         with storage.connect() as con:
-            con.execute("INSERT INTO user_profiles(user_id,profile_photo,updated_at) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET profile_photo=excluded.profile_photo,updated_at=excluded.updated_at", (uid, file_id, storage.now()))
-        await msg.reply_text("💖 Profile photo updated.")
+            con.execute(
+                """INSERT INTO user_profiles(user_id,profile_photo,profile_waifu_id,updated_at)
+                VALUES (?,?,NULL,?) ON CONFLICT(user_id) DO UPDATE SET
+                profile_photo=excluded.profile_photo,profile_waifu_id=NULL,updated_at=excluded.updated_at""",
+                (uid, file_id, storage.now())
+            )
+        await msg.reply_text("📸 Profile photo updated successfully!")
         return
     await msg.reply_text("Usage: /setprofile <owned_waifu_id>, or reply to a photo with /setprofile.")
 
 
+async def setprofile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    action, token = q.data.split(":", 1)
+    pending = storage.get_pending(token, q.from_user.id, "set_profile_waifu")
+    if not pending:
+        await q.answer("This profile request has expired or does not belong to you.", show_alert=True)
+        return
+    import json
+    data = json.loads(pending["payload"])
+    if action == "setprofileno":
+        storage.finish_pending(token, "cancelled")
+        await q.answer("Profile update cancelled.")
+        await _edit_photo_or_text(q, "❌ Profile update cancelled.")
+        return
+    w = storage.owned_waifu(q.from_user.id, data["waifu_id"])
+    if not w:
+        await q.answer("You no longer own this waifu.", show_alert=True)
+        return
+    with storage.connect() as con:
+        con.execute(
+            """INSERT INTO user_profiles(user_id,profile_waifu_id,profile_photo,updated_at)
+            VALUES (?,?,NULL,?) ON CONFLICT(user_id) DO UPDATE SET
+            profile_waifu_id=excluded.profile_waifu_id,profile_photo=NULL,updated_at=excluded.updated_at""",
+            (q.from_user.id, w["waifu_id"], storage.now())
+        )
+    storage.finish_pending(token, "done")
+    await q.answer("Profile updated successfully.")
+    await _edit_photo_or_text(q, f"💖 Profile Updated Successfully!\n\n{_display(w)}")
+
+
 async def dupload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _sudo(update.effective_user.id):
+    if not _staff(update.effective_user.id):
         return
     msg = update.effective_message
     wid = context.args[0] if context.args else None
