@@ -38,7 +38,7 @@ def test_find_helpers_page_distinct_owners_and_show_global_picks(monkeypatch):
     }
     caption, pages = waifu._find_caption(item, 0)
     assert pages == 2
-    assert "GLOBALLY 𝗣𝗜𝗖𝗞𝗘𝗗: 12 Times" in caption
+    assert "𝗚𝗟𝗢𝗕𝗔𝗟𝗟𝗬 𝗣𝗜𝗖𝗞𝗘𝗗: 12 Times" in caption
     assert "Page 1/2" in caption
     assert "User 1" in caption
 
