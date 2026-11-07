@@ -827,15 +827,21 @@ async def spawn_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def changetime_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _staff(update.effective_user.id):
         return
-    if update.effective_message.chat.type == ChatType.PRIVATE:
-        await update.effective_message.reply_text("Use this command in a group: /changetime <2-120 minutes>")
+    msg = update.effective_message
+    if msg.chat.type == ChatType.PRIVATE:
+        await msg.reply_text("Use this command in the group whose spawn timer you want to change.")
         return
-    try:
-        minutes = int(context.args[0])
-        if not 2 <= minutes <= 120:
-            raise ValueError
-    except (ValueError, IndexError):
-        await update.effective_message.reply_text("Usage: /changetime <2-120 minutes>")
+    if len(context.args) != 1 or not context.args[0].isdigit():
+        await msg.reply_text(
+            "⚠️ INVALID CHANGETIME FORMAT\n\n"
+            "Examples:\n/changetime 5\n/changetime 10"
+        )
+        return
+    minutes = int(context.args[0])
+    if not 2 <= minutes <= 120:
+        await msg.reply_text(
+            "❌ INVALID TIME RANGE\n\nMinimum: 2 minutes\nMaximum: 120 minutes."
+        )
         return
     with storage.connect() as con:
         con.execute(
@@ -844,7 +850,14 @@ async def changetime_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             spawn_interval=excluded.spawn_interval,next_spawn_at=excluded.next_spawn_at,enabled=1""",
             (update.effective_chat.id, minutes, storage.now() + minutes * 60)
         )
-    await update.effective_message.reply_text(f"✅ Spawn interval set to every {minutes} minutes.")
+    group_name = update.effective_chat.title or str(update.effective_chat.id)
+    await msg.reply_text(
+        "⏱ SPAWN INTERVAL UPDATED SUCCESSFULLY!\n\n"
+        f"Group: {group_name}\n"
+        f"Spawn Interval: Every {minutes} minutes\n"
+        "Status: ACTIVE ✅\n"
+        "The new timer starts now for this group."
+    )
 
 
 async def marriage_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
