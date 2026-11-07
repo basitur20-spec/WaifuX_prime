@@ -362,7 +362,8 @@ async def remove_sudo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # SUDO LIST (username + name)
 # ---------------------------
 async def sudo_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_sudo_owner(update.effective_user.id):
+    user_id = update.effective_user.id
+    if not is_sudo_owner(user_id) and not is_sudo(user_id):
         return
 
     sudo_list = load_sudo()
@@ -387,27 +388,30 @@ async def sudo_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # SUDO COMMANDS
 # ---------------------------
 SUDO_COMMANDS = [
-    "/auction",
+    "/auction <waifu_id> <starting_bid> [hours]",
     "/auction users",
-    "/balance history",
-    "/gen",
-    "/dgen",
-    "/changetime",
-    "/dupload",
-    "/give",
-    "/dtops rarity",
+    "/gen <amount> <quantity> [cash/dimond]",
+    "/dgen <waifu_id> <quantity>",
+    "/changetime <2-120 minutes>",
+    "/dupload <waifu_id>",
+    "/give <waifu_id> <username|bot_user_id>",
+    "/dtops",
+    "/sudolist",
+    "/sudocommands",
 ]
 
+
 SUDO_EXAMPLES = {
-    "/auction": "Create a waifu auction.\nExample: /auction 2342 1000000",
-    "/auction users": "View all users in auctions.\nExample: /auction users",
-    "/balance history": "Check balance logs of users.",
-    "/gen": "Generate bot cash code.\nExample: /gen 500000 10",
-    "/dgen": "Generate waifu code.\nExample: /dgen 2947 5",
-    "/changetime": "Change waifu spawn timing.\nExample: /changetime 10",
-    "/dupload": "Delete uploaded waifu globally.\nExample: /dupload 38429",
-    "/give": "Gift a waifu to another user.\nExample: /give 2492 @Alex",
-    "/dtops rarity": "View rarity-wise waifu upload stats.",
+    "/auction <waifu_id> <starting_bid> [hours]": "Create a 24-hour auction by default. Example: /auction 2342 1000000",
+    "/auction users": "View active auction bidders. Example: /auction users",
+    "/gen <amount> <quantity> [cash/dimond]": "Generate cash/diamond codes. Example: /gen 500000 10",
+    "/dgen <waifu_id> <quantity>": "Generate waifu codes. Example: /dgen 2947 5",
+    "/changetime <2-120 minutes>": "Change group spawn timing. Example: /changetime 10",
+    "/dupload <waifu_id>": "Delete an uploaded waifu. Example: /dupload 38429",
+    "/give <waifu_id> <username|bot_user_id>": "Grant a waifu to a user.",
+    "/dtops": "View rarity-wise waifu upload statistics.",
+    "/sudolist": "View Sudo members.",
+    "/sudocommands": "Open the Sudo command guide.",
 }
 
 
@@ -443,16 +447,11 @@ async def sudo_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------------------
 async def sudo_guide_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    if not is_sudo_owner(query.from_user.id) and not is_sudo(query.from_user.id):
+        await query.answer("This guide is only for Owner and Sudo.", show_alert=True)
+        return
     await query.answer()
-
-    text = build_sudo_commands_text()
-
-    try:
-        await context.bot.send_message(chat_id=query.from_user.id, text=text)
-    except:
-        await query.message.reply_text(
-            "Cannot send DM. Start a chat with the bot first."
-        )
+    await context.bot.send_message(chat_id=query.from_user.id, text=build_sudo_commands_text())
 
 
 
@@ -574,7 +573,8 @@ async def remove_uploader(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # UPLOADER LIST
 # ---------------------------
 async def uploader_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_uploader_owner(update.effective_user.id):
+    user_id = update.effective_user.id
+    if not is_uploader_owner(user_id) and not is_uploader(user_id):
         return
 
     uploader_list = load_uploaders()
@@ -599,22 +599,16 @@ async def uploader_list_command(update: Update, context: ContextTypes.DEFAULT_TY
 # UPLOADER COMMANDS
 # ---------------------------
 UPLOADER_COMMANDS = [
-    "/auction",
-    "/auction users",
-    "/dupload",
-    "/give",
-    "/dtops rarity",
-    "/dgen",
+    "/upload",
+    "/uploaderlist",
+    "/uploadercommands",
 ]
 
+
 UPLOADER_EXAMPLES = {
-    "/auction": "Create a waifu auction.",
-    "/auction users": "View all active auctions users list.",
-    "/upload": "To uploaded waifu.\nExample: /upload 38429,Name,Anime,Rarity",
-    "/dupload": "Delete an uploaded waifu.\nExample: /dupload 38429",
-    "/give": "Gift a waifu to a user.\nExample: /give 2492 @Alex",
-    "/dtops rarity": "View rarity-based waifu statistics.",
-    "/dgen": "To generate waifu codes.",
+    "/upload": "Upload a waifu using an image and caption fields: Name, Rarity, Anime.",
+    "/uploaderlist": "View the Uploader members list.",
+    "/uploadercommands": "Open the Uploader command guide.",
 }
 
 
@@ -649,16 +643,11 @@ async def uploader_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------------------
 async def uploader_guide_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    if not is_uploader_owner(query.from_user.id) and not is_uploader(query.from_user.id):
+        await query.answer("This guide is only for Owner and Uploaders.", show_alert=True)
+        return
     await query.answer()
-
-    text = build_uploader_commands_text()
-
-    try:
-        await context.bot.send_message(chat_id=query.from_user.id, text=text)
-    except:
-        await query.message.reply_text(
-            "Cannot send DM. Start a chat with the bot first."
-        )
+    await context.bot.send_message(chat_id=query.from_user.id, text=build_uploader_commands_text())
 
 
 
@@ -1233,8 +1222,8 @@ async def dgen_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     r = role(uid)
 
-    if r not in ("owner", "sudo", "uploader"):
-        return await update.message.reply_text("❌ Not allowed.")
+    if r not in ("owner", "sudo"):
+        return
 
     if len(context.args) < 2:
         return await update.message.reply_text(
