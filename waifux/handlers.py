@@ -19,120 +19,282 @@ from . import waifu_handlers as waifu
 from . import marketplace
 from . import social_handlers as social
 from . import event_handlers as events
+from . import roles
 
 logger = logging.getLogger(__name__)
 
 
-HELP_TEXT = (
-    "🌸 WAIFUX PRIME — COMMAND GUIDE 🌸\n\n"
-    "📚 COLLECTION & PROFILE\n"
-    "/collection [@username|bot_id] — view collection\n"
-    "/fav [waifu_id] / /fave — choose or set favourite\n"
-    "/dmode — choose collection display mode\n"
-    "/setprofile <waifu_id> — set profile waifu; reply to a photo to set profile photo\n"
-    "/profile [@username|bot_id] — view profile\n\n"
-    "🎭 CHARACTER CATALOGUE\n"
-    "/upload — upload a photo with Name, Rarity, Anime\n"
-    "/dupload <waifu_id> — delete a character (uploader)\n"
-    "/f <waifu_id> — character information\n"
-    "/find <waifu_id> — global owners and picked count\n"
-    "/dfind <name> — search catalogue by name/anime\n\n"
-    "🎮 GAMEPLAY\n"
-    "/hunt <name> — claim the group spawn\n"
-    "/waifu — claim daily waifu (12h cooldown)\n"
-    "/marriage — 35% chance for Shiny/Ultimate reward\n"
-    "/propose — spend 30,000 Cash for a proposal\n\n"
-    "💰 ECONOMY & TRANSFERS\n"
-    "/balance, /explore, /bonus, /bonusrefresh, /pay, /payrefresh — cash economy\n"
-    "/sell <id> [ids...] — sell up to 5 waifus/day\n"
-    "/sell diamonds <amount> — exchange diamonds for Cash\n"
-    "/gift <waifu_id> — reply to a user to gift\n"
-    "/trade <your_id> <their_id> — reply to a user to trade\n\n"
-    "🏪 MARKETPLACE & AUCTIONS\n"
-    "/marketplace — daily offers, two purchases/day\n"
-    "/auction <waifu_id> <starting_bid> [hours] — list auction (staff)\n"
-    "/bid <amount> — submit a bid after opening Auction\n"
-    "/auction users — current bidders (staff)\n\n"
-    "👥 GROUP CONTROLS\n"
-    "/spawn <rarity> on/off — toggle hunt rarity (owner)\n"
-    "/changetime <2-120 minutes> — set group spawn interval (sudo)\n"
-    "/filter <keyword> | <response>, /filters, /delfilter, /delall\n\n"
-    "👑 OWNER / STAFF\n"
-    "/give <waifu_id> <username|bot_id> — grant waifu\n"
-    "/gclaim <amount|amount d|waifu id> — create one-time reward\n"
-    "/claim — claim active reward once\n"
-    "/marketspawn <rarity> on/off — marketplace rarity control (owner)\n"
-    "/gen, /redeem, /dgen, /dredeem — redeem codes\n"
-    "/redeemtoggle, /dredeemtoggle — code system toggles (owner)\n"
-    "/dtops — leaderboard\n"
-    "/sudolist, /sudocommands, /uploaderlist, /uploadercommands — staff info\n"
-    "/stop <command>, /run <command|all>, /send <message>\n"
-    "/addsudo, /rsudo, /sudolist, /adduploader, /ruploader\n\n"
-    "🎲 OTHER GAMES\n"
-    "/roll, /darts, /goal, /mines, /endmines"
-)
+HELP_CATEGORIES = {
+    "collection": (
+        "📚 COLLECTION & PROFILE\n\n"
+        "/collection — View your collection\n"
+        "/fav or /fave — Manage favourite waifus\n"
+        "/dmode — Change collection display mode\n"
+        "/profile [user] — View a profile\n"
+        "/setprofile <waifu_id> — Set profile waifu/photo"
+    ),
+    "waifu": (
+        "🎭 WAIFU GAMEPLAY\n\n"
+        "/hunt <name> — Claim the active group spawn\n"
+        "/waifu — Claim your daily waifu\n"
+        "/marriage — Try the marriage feature\n"
+        "/propose — Make a proposal"
+    ),
+    "catalogue": (
+        "🗂️ CHARACTER CATALOGUE\n\n"
+        "/f <waifu_id> — View character information\n"
+        "/find <waifu_id> — Find character owners\n"
+        "/dfind <name> — Search uploaded characters\n"
+        "/upload — Upload a character (Uploader/Owner)\n"
+        "/dupload <waifu_id> — Request character deletion (Sudo/Owner)"
+    ),
+    "economy": (
+        "💰 ECONOMY & TRANSFERS\n\n"
+        "/balance — Check your balance\n"
+        "/explore — Explore for rewards\n"
+        "/bonus — Open daily/weekly bonus menu\n"
+        "/pay — Transfer cash/diamonds\n"
+        "/gift <waifu_id> — Gift a waifu (reply to receiver)\n"
+        "/trade <your_id> <their_id> — Trade waifus (reply to user)\n"
+        "/sell <waifu_id> — Sell a waifu"
+    ),
+    "market": (
+        "🏪 MARKETPLACE & AUCTIONS\n\n"
+        "/marketplace — Open your daily marketplace\n"
+        "Use the Auction button in the marketplace to view and bid.\n"
+        "Listing an auction is a Sudo/Owner action; see Staff Guide."
+    ),
+    "games": (
+        "🎮 GAMES\n\n"
+        "/roll — Roll dice\n"
+        "/darts — Play darts\n"
+        "/goal — Play goal\n"
+        "/mines — Play mines\n"
+        "/endmines — End your active mines game"
+    ),
+    "groups": (
+        "👥 GROUP TOOLS\n\n"
+        "/filter <keyword> | <reply> — Add a chat filter\n"
+        "/filters — View chat filters\n"
+        "/delfilter <keyword> — Delete a filter\n"
+        "/delall — Delete all chat filters\n"
+        "/changetime <minutes> — Set spawn interval (Sudo/Owner)\n"
+        "/spawn <rarity> on/off — Toggle spawn rarity (Owner)"
+    ),
+}
+
+ROLE_COMMANDS = {
+    "addsudo": {"owner"}, "rsudo": {"owner"},
+    "adduploader": {"owner"}, "ruploader": {"owner"},
+    "sudolist": {"sudo"}, "sudocommands": {"sudo"},
+    "uploaderlist": {"uploader"}, "uploadercommands": {"uploader"},
+    "upload": {"uploader"}, "dupload": {"sudo"},
+    "auction": {"sudo"}, "changetime": {"sudo"},
+    "gen": {"sudo"}, "dgen": {"sudo"}, "give": {"sudo"}, "dtops": {"sudo"},
+    "bonusrefresh": {"owner"}, "payrefresh": {"owner"},
+    "redeemtoggle": {"owner"}, "dredeemtoggle": {"owner"},
+    "marketspawn": {"owner"}, "spawn": {"owner"},
+    "gclaim": {"owner"}, "send": {"owner"}, "stop": {"owner"}, "run": {"owner"},
+}
+
+
+def _role(uid: int) -> str:
+    return roles.role(int(uid))
+
+
+def _help_keyboard(uid: int, section: str = "main") -> InlineKeyboardMarkup:
+    role = _role(uid)
+    if section == "main":
+        rows = [
+            [InlineKeyboardButton("📚 Collection", callback_data="HELP:collection"),
+             InlineKeyboardButton("🎭 Waifu", callback_data="HELP:waifu")],
+            [InlineKeyboardButton("🗂️ Catalogue", callback_data="HELP:catalogue"),
+             InlineKeyboardButton("💰 Economy", callback_data="HELP:economy")],
+            [InlineKeyboardButton("🏪 Marketplace", callback_data="HELP:market"),
+             InlineKeyboardButton("🎮 Games", callback_data="HELP:games")],
+            [InlineKeyboardButton("👥 Group Tools", callback_data="HELP:groups")],
+        ]
+        if role != "user":
+            rows.append([InlineKeyboardButton("🛡️ Staff Guide", callback_data="HELP:staff")])
+        rows.append([InlineKeyboardButton("✖ Close", callback_data="HELP:close")])
+        return InlineKeyboardMarkup(rows)
+
+    if section == "staff":
+        rows = []
+        if role == "owner":
+            rows.extend([
+                [InlineKeyboardButton("👑 Owner Commands", callback_data="HELP:owner")],
+                [InlineKeyboardButton("🛡️ Sudo Commands", callback_data="HELP:sudo")],
+                [InlineKeyboardButton("📤 Uploader Commands", callback_data="HELP:uploader")],
+            ])
+        elif role == "sudo":
+            rows.append([InlineKeyboardButton("🛡️ Sudo Commands", callback_data="HELP:sudo")])
+        elif role == "uploader":
+            rows.append([InlineKeyboardButton("📤 Uploader Commands", callback_data="HELP:uploader")])
+        rows.append([InlineKeyboardButton("⬅ Back", callback_data="HELP:main")])
+        return InlineKeyboardMarkup(rows)
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬅ Back to Help", callback_data="HELP:main")]
+    ])
+
+
+def _help_content(uid: int, section: str) -> str:
+    role = _role(uid)
+    if section in HELP_CATEGORIES:
+        return HELP_CATEGORIES[section]
+    if section == "staff":
+        return "🛡️ STAFF GUIDE\n\nChoose your verified role below to view its command guide."
+    if section == "owner" and role == "owner":
+        return (
+            "👑 OWNER COMMAND GUIDE\n\n"
+            "Owner has unrestricted access to every bot command.\n\n"
+            "ROLE MANAGEMENT\n"
+            "/addsudo — Reply to a user to promote them to Sudo\n"
+            "/rsudo — Reply to a Sudo to remove the role\n"
+            "/adduploader — Reply to a user to promote them to Uploader\n"
+            "/ruploader — Reply to an Uploader to remove the role\n"
+            "/sudolist /uploaderlist — View staff lists\n\n"
+            "OWNER CONTROLS\n"
+            "/bonusrefresh — Reply to a user to reset bonus cooldown\n"
+            "/payrefresh — Reply to a user to reset payment cooldown\n"
+            "/marketspawn <rarity> on/off — Toggle marketplace rarity\n"
+            "/spawn <rarity> on/off — Toggle spawn rarity\n"
+            "/redeemtoggle on/off, /dredeemtoggle on/off\n"
+            "/gclaim — Create a one-time reward\n"
+            "/send — Broadcast a message\n"
+            "/stop /run — Manage command maintenance\n\n"
+            "Owner can also use all Sudo and Uploader commands."
+        )
+    if section == "sudo" and role in {"owner", "sudo"}:
+        return (
+            "🛡️ SUDO COMMAND GUIDE\n\n"
+            "/auction <waifu_id> <starting_bid> [hours]\n"
+            "Example: /auction 2342 1000000 24\n"
+            "/auction users — View active auction bidders\n\n"
+            "/gen <amount> <quantity> [cash/dimond] — Generate cash/diamond codes\n"
+            "/dgen <waifu_id> <quantity> — Generate waifu codes\n"
+            "/changetime <2-120 minutes> — Change group spawn interval\n"
+            "/dupload <waifu_id> — Request character deletion\n"
+            "/give <waifu_id> <username|bot_user_id> — Grant a waifu\n"
+            "/dtops — View upload statistics\n"
+            "/sudolist — View Sudo members\n"
+            "/sudocommands — Open this command guide"
+        )
+    if section == "uploader" and role in {"owner", "uploader"}:
+        return (
+            "📤 UPLOADER COMMAND GUIDE\n\n"
+            "/upload — Upload a waifu using an image and its details.\n"
+            "Send the image with caption fields:\n"
+            "Name: Character Name\nRarity: Shiny\nAnime: Anime Name\n"
+            "Price, ID and Aliases are optional.\n\n"
+            "/uploaderlist — View Uploader members\n"
+            "/uploadercommands — Open this command guide"
+        )
+    return "This guide is not available for your role."
 
 
 async def help_command(update, context) -> None:
-    await update.effective_message.reply_text(HELP_TEXT)
+    uid = update.effective_user.id
+    await update.effective_message.reply_text(
+        "🌸 WAIFUX PRIME — HELP CENTER 🌸\n\nChoose a category to view its commands and instructions.",
+        reply_markup=_help_keyboard(uid),
+    )
 
 
 async def help_callback(update, context) -> None:
     q = update.callback_query
+    uid = q.from_user.id
+    data = q.data or ""
     await q.answer()
+    if data == "OPEN_HELP" or data == "HELP:main":
+        await q.edit_message_text(
+            "🌸 WAIFUX PRIME — HELP CENTER 🌸\n\nChoose a category to view its commands and instructions.",
+            reply_markup=_help_keyboard(uid),
+        )
+        return
+    if data == "HELP:close":
+        await q.delete_message()
+        return
+    section = data.partition(":")[2]
+    role = _role(uid)
+    if section in {"staff", "owner", "sudo", "uploader"}:
+        permitted = (
+            role != "user" if section == "staff" else
+            role == "owner" if section == "owner" else
+            role in {"owner", "sudo"} if section == "sudo" else
+            role in {"owner", "uploader"}
+        )
+        if not permitted:
+            await q.answer("This guide is not available for your role.", show_alert=True)
+            return
     await q.edit_message_text(
-        HELP_TEXT,
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Back", callback_data="HELP_BACK_TO_START")]])
+        _help_content(uid, section),
+        reply_markup=_help_keyboard(uid, section),
     )
 
 
+async def staff_guide_callback(update, context, role_name: str) -> None:
+    q = update.callback_query
+    uid = q.from_user.id
+    current = _role(uid)
+    if current != "owner" and current != role_name:
+        await q.answer("This guide is not available for your role.", show_alert=True)
+        return
+    await q.answer()
+    await context.bot.send_message(chat_id=uid, text=_help_content(uid, role_name))
+
+
+
 def _install_runtime_roles(owner_id: int) -> None:
-    """Replace stale hard-coded role IDs with the persistent role lists."""
-    legacy.OWNER_ID = owner_id
-
-    def _is_owner(uid: int) -> bool:
-        return int(uid) == owner_id
-
-    # Legacy role-management functions had hard-coded owner IDs.
-    legacy.is_sudo_owner = _is_owner
-    legacy.is_uploader_owner = _is_owner
-    legacy.SUDO_FILE = "data/sudo_users.json"
-    legacy.UPLOADER_FILE = "data/uploader_users.json"
-
-    def _is_sudo(uid: int) -> bool:
-        try:
-            return int(uid) in {int(value) for value in legacy.load_sudo()}
-        except (TypeError, ValueError):
-            return False
-
-    def _is_uploader(uid: int) -> bool:
-        try:
-            return int(uid) in {int(value) for value in legacy.load_uploaders()}
-        except (TypeError, ValueError):
-            return False
-
-    def _role(uid: int) -> str:
-        if _is_owner(uid):
-            return "owner"
-        if _is_sudo(uid):
-            return "sudo"
-        if _is_uploader(uid):
-            return "uploader"
-        return "user"
-
-    legacy.is_owner = _is_owner
-    legacy.is_sudo = _is_sudo
-    legacy.is_uploader = _is_uploader
-    legacy.role = _role
-    legacy.is_staff = lambda uid: _role(uid) in {"owner", "sudo", "uploader"}
-    legacy.SUDO_USERS = set()
-    legacy.UPLOADER_USERS = set()
+    """Use one persistent role source and the Replit OWNER_ID everywhere."""
+    roles.configure(owner_id)
+    legacy.OWNER_ID = int(owner_id)
+    legacy.SUDO_FILE = str(roles.SUDO_FILE)
+    legacy.UPLOADER_FILE = str(roles.UPLOADER_FILE)
+    legacy.load_sudo = roles.load_sudo
+    legacy.save_sudo = roles.save_sudo
+    legacy.load_uploaders = roles.load_uploaders
+    legacy.save_uploaders = roles.save_uploaders
+    legacy.is_sudo_owner = roles.is_owner
+    legacy.is_uploader_owner = roles.is_owner
+    legacy.is_owner = roles.is_owner
+    legacy.is_sudo = roles.is_sudo
+    legacy.is_uploader = roles.is_uploader
+    legacy.role = roles.role
+    legacy.is_staff = roles.is_staff
+    _sync_legacy_role_sets()
 
 
 def _sync_legacy_role_sets() -> None:
-    """Refresh compatibility sets used by older command implementations."""
-    legacy.SUDO_USERS = {int(value) for value in legacy.load_sudo()}
-    legacy.UPLOADER_USERS = {int(value) for value in legacy.load_uploaders()}
+    """Refresh compatibility sets for older code that still uses set membership."""
+    legacy.SUDO_USERS = set(roles.load_sudo())
+    legacy.UPLOADER_USERS = set(roles.load_uploaders())
+
+
+def _wrap_legacy(callback):
+    async def wrapped(update, context):
+        _sync_legacy_role_sets()
+        return await callback(update, context)
+    wrapped.__name__ = getattr(callback, "__name__", "legacy_handler")
+    return wrapped
+
+
+def _guard_role(command_name: str, callback):
+    allowed = ROLE_COMMANDS.get(command_name)
+    if not allowed:
+        return callback
+
+    async def guarded(update, context):
+        _sync_legacy_role_sets()
+        current = _role(update.effective_user.id)
+        # Owner is intentionally unrestricted across the entire command map.
+        if current != "owner" and current not in allowed:
+            return
+        return await callback(update, context)
+
+    guarded.__name__ = getattr(callback, "__name__", f"guarded_{command_name}")
+    return guarded
 
 
 async def redeem_command(update, context) -> None:
@@ -229,14 +391,10 @@ def register_handlers(app: Application, owner_id: int) -> None:
     app.add_handler(MessageHandler(filters.ALL, events.track_user), group=-2)
     app.add_handler(MessageHandler(filters.COMMAND, waifu.command_guard), group=-1)
     for name, callback in command_map.items():
+        if callback.__module__ == legacy.__name__:
+            callback = _wrap_legacy(callback)
+        callback = _guard_role(name, callback)
         app.add_handler(CommandHandler(name, callback))
-
-    async def unknown_command(update, context):
-        await update.effective_message.reply_text(
-            "This command is not available yet. Use /help to see available commands."
-        )
-
-    app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
     # Specific callback patterns prevent the old catch-all handler from
     # swallowing collection image callbacks or unrelated inline buttons.
@@ -247,13 +405,12 @@ def register_handlers(app: Application, owner_id: int) -> None:
         (r"^dt_", legacy.dtops_callback),
         (r"^cw_img_\d+_\d+$", legacy.collection_image_view),
         (r"^(?:cw_(?:next|prev)_\d+_\d+|cw_close)$", legacy.collection_callback),
-        (r"^SUDO_GUIDE$", legacy.sudo_guide_callback),
-        (r"^UPLOADER_GUIDE$", legacy.uploader_guide_callback),
-        (r"^(?:HELP_COMMANDS_1|HELP_COMMANDS_2|HELP_GAMES|HELP_BACK_TO_START)$", legacy.callback_router),
+        (r"^SUDO_GUIDE$", lambda update, context: staff_guide_callback(update, context, "sudo")),
+        (r"^UPLOADER_GUIDE$", lambda update, context: staff_guide_callback(update, context, "uploader")),
     ]
     for pattern, callback in callback_map:
         app.add_handler(CallbackQueryHandler(callback, pattern=pattern))
-    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^OPEN_HELP$"))
+    app.add_handler(CallbackQueryHandler(help_callback, pattern=r"^(?:OPEN_HELP|HELP:.*)$"))
 
     app.add_handler(CallbackQueryHandler(waifu.collection_callback, pattern=r"^(?:col|colimg|colclose|colimgclose):|^colimgnoop$"))
     app.add_handler(CallbackQueryHandler(waifu.dmode_callback, pattern=r"^(?:dmode:|dmrarity:|dmchoices:|dmback:|dmset:|dmpick:|dmclose:|dmnoop$)"))
